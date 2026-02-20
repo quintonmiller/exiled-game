@@ -265,6 +265,7 @@ export class PopulationSystem {
       isChild,
       isEducated: false,
       isSleeping: false,
+      traits: this.game.generateTraits(),
     });
 
     world.addComponent(id, 'movement', {

@@ -148,7 +148,28 @@ export class InfoPanel {
       ctx.fillText(`Age: ${citizen.age}  ${citizen.isMale ? 'Male' : 'Female'}`, leftX, textY);
       textY += 16;
       ctx.fillText(`${citizen.isChild ? 'Child' : 'Adult'}  ${citizen.isEducated ? 'Educated' : 'Uneducated'}`, leftX, textY);
-      textY += 20;
+      textY += 16;
+
+      // Personality traits
+      if (citizen.traits && citizen.traits.length > 0) {
+        const traitColors: Record<string, string> = {
+          hardworking: '#44cc44',
+          lazy: '#cc8844',
+          cheerful: '#ffdd44',
+          shy: '#8888cc',
+          adventurous: '#44ccaa',
+        };
+        ctx.font = '11px monospace';
+        let tx = leftX;
+        for (const trait of citizen.traits) {
+          const label = (trait as string).charAt(0).toUpperCase() + (trait as string).slice(1);
+          ctx.fillStyle = traitColors[trait as string] || '#aaaaaa';
+          ctx.fillText(label, tx, textY);
+          tx += ctx.measureText(label).width + 8;
+        }
+        textY += 16;
+      }
+      textY += 4;
 
       // Needs bars
       const needs = world.getComponent<any>(id, 'needs');

@@ -7,6 +7,7 @@ import {
   FORESTER_REPLANT_TICKS, TREE_GROWTH_TICKS,
   FOREST_EFFICIENCY_DIVISOR,
   PLANTING_DAY_CROP_MULT,
+  TRAIT_WORK_SPEED_BONUS, PersonalityTrait,
 } from '../constants';
 
 export class ProductionSystem {
@@ -69,6 +70,10 @@ export class ProductionSystem {
       if (educatedCount > 0) {
         efficiency *= 1 + (educatedCount / workerCount) * (EDUCATION_BONUS - 1);
       }
+
+      // Personality trait work speed bonus/penalty
+      const traitBonus = this.getTraitWorkBonus(id);
+      efficiency *= (1 + traitBonus);
 
       // Tool check
       const needsTools = this.buildingNeedsTools(bld.type);
@@ -222,6 +227,28 @@ export class ProductionSystem {
       if (worker.workplaceId === buildingId) count++;
     }
     return count;
+  }
+
+  /** Average work speed trait bonus for all workers at a building */
+  private getTraitWorkBonus(buildingId: number): number {
+    const world = this.game.world;
+    const workers = world.getComponentStore<any>('worker');
+    const citizens = world.getComponentStore<any>('citizen');
+    if (!workers || !citizens) return 0;
+
+    let totalBonus = 0;
+    let count = 0;
+    for (const [id, worker] of workers) {
+      if (worker.workplaceId !== buildingId) continue;
+      const cit = citizens.get(id);
+      if (!cit?.traits) continue;
+      count++;
+      for (const trait of cit.traits) {
+        const bonus = TRAIT_WORK_SPEED_BONUS[trait as PersonalityTrait];
+        if (bonus !== undefined) totalBonus += bonus;
+      }
+    }
+    return count > 0 ? totalBonus / count : 0;
   }
 
   private countEducatedWorkers(buildingId: number): number {

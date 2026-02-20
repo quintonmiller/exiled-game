@@ -30,7 +30,7 @@ import { SaveData } from './save/SaveTypes';
 import {
   TILE_SIZE, STARTING_ADULTS, STARTING_CHILDREN, CITIZEN_SPEED,
   STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES, ALL_FOOD_TYPES, COOKED_FOOD_TYPES,
-  COOKED_MEAL_RESTORE, COOKED_MEAL_COST,
+  COOKED_MEAL_RESTORE, COOKED_MEAL_COST, ALL_TRAITS, MAX_TRAITS_PER_CITIZEN, PersonalityTrait,
   SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET,
 } from './constants';
 
@@ -464,6 +464,7 @@ export class Game {
         isChild,
         isEducated: false,
         isSleeping: false,
+        traits: this.generateTraits(),
       });
 
       this.world.addComponent(id, 'movement', {
@@ -543,6 +544,39 @@ export class Game {
       });
       this.tileMap.markOccupied(sx, sy, 4, 4, id);
     }
+  }
+
+  /** Generate 1-2 random personality traits (no conflicting pairs) */
+  generateTraits(): string[] {
+    const count = this.rng.int(1, MAX_TRAITS_PER_CITIZEN);
+    const available = [...ALL_TRAITS];
+    const traits: string[] = [];
+
+    for (let i = 0; i < count && available.length > 0; i++) {
+      const idx = this.rng.int(0, available.length - 1);
+      const trait = available[idx];
+
+      // Remove conflicting pairs
+      traits.push(trait);
+      available.splice(idx, 1);
+
+      // Remove opposites
+      if (trait === PersonalityTrait.HARDWORKING) {
+        const lazyIdx = available.indexOf(PersonalityTrait.LAZY);
+        if (lazyIdx >= 0) available.splice(lazyIdx, 1);
+      } else if (trait === PersonalityTrait.LAZY) {
+        const hwIdx = available.indexOf(PersonalityTrait.HARDWORKING);
+        if (hwIdx >= 0) available.splice(hwIdx, 1);
+      } else if (trait === PersonalityTrait.CHEERFUL) {
+        const shyIdx = available.indexOf(PersonalityTrait.SHY);
+        if (shyIdx >= 0) available.splice(shyIdx, 1);
+      } else if (trait === PersonalityTrait.SHY) {
+        const cheerIdx = available.indexOf(PersonalityTrait.CHEERFUL);
+        if (cheerIdx >= 0) available.splice(cheerIdx, 1);
+      }
+    }
+
+    return traits;
   }
 
   private generateName(isMale: boolean): string {

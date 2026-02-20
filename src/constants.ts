@@ -298,6 +298,33 @@ export const TREE_GROWTH_TICKS = 3000;         // worker-ticks per density level
 export const STONE_DEPOSIT_AMOUNT = 50;        // starting amount in each stone deposit tile
 export const IRON_DEPOSIT_AMOUNT = 30;         // starting amount in each iron deposit tile
 
+// Personality Traits
+export const PersonalityTrait = {
+  HARDWORKING: 'hardworking',
+  LAZY: 'lazy',
+  CHEERFUL: 'cheerful',
+  SHY: 'shy',
+  ADVENTUROUS: 'adventurous',
+} as const;
+export type PersonalityTrait = (typeof PersonalityTrait)[keyof typeof PersonalityTrait];
+
+export const TRAIT_WORK_SPEED_BONUS: Partial<Record<PersonalityTrait, number>> = {
+  [PersonalityTrait.HARDWORKING]: 0.15,   // +15% work speed
+  [PersonalityTrait.LAZY]: -0.15,          // -15% work speed
+};
+export const TRAIT_SOCIAL_CHANCE_MULT: Partial<Record<PersonalityTrait, number>> = {
+  [PersonalityTrait.SHY]: 0.3,            // 70% less likely to chat
+  [PersonalityTrait.CHEERFUL]: 2.0,        // 2x more likely to chat
+};
+export const TRAIT_HAPPINESS_GAIN_MULT: Partial<Record<PersonalityTrait, number>> = {
+  [PersonalityTrait.CHEERFUL]: 1.5,        // 50% more happiness from socializing
+};
+export const TRAIT_WANDER_HAPPINESS: Partial<Record<PersonalityTrait, number>> = {
+  [PersonalityTrait.ADVENTUROUS]: 0.003,   // gains happiness from wandering
+};
+export const MAX_TRAITS_PER_CITIZEN = 2;
+export const ALL_TRAITS: PersonalityTrait[] = Object.values(PersonalityTrait);
+
 // Cooking / Meal quality
 export const COOKED_MEAL_RESTORE = 45;          // cooked food restores 45 food (vs 30 raw)
 export const COOKED_MEAL_COST = 2;              // cooked meals cost 2 units (vs 3 raw)

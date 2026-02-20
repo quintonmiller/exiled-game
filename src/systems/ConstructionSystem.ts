@@ -1,5 +1,5 @@
 import type { Game } from '../Game';
-import { EDUCATION_BONUS, CONSTRUCTION_WORK_RATE, EDUCATED_CONSTRUCTION_BONUS, INITIAL_HOUSE_WARMTH } from '../constants';
+import { EDUCATION_BONUS, CONSTRUCTION_WORK_RATE, EDUCATED_CONSTRUCTION_BONUS, INITIAL_HOUSE_WARMTH, TRAIT_WORK_SPEED_BONUS, PersonalityTrait } from '../constants';
 
 export class ConstructionSystem {
   private game: Game;
@@ -45,10 +45,17 @@ export class ConstructionSystem {
       // Advance construction
       let workRate = workers.length * CONSTRUCTION_WORK_RATE;
 
-      // Educated workers build faster
+      // Educated workers build faster + personality trait bonus
       for (const wId of workers) {
         const cit = world.getComponent<any>(wId, 'citizen');
         if (cit?.isEducated) workRate += EDUCATED_CONSTRUCTION_BONUS;
+        // Trait work speed bonus
+        if (cit?.traits) {
+          for (const trait of cit.traits) {
+            const bonus = TRAIT_WORK_SPEED_BONUS[trait as PersonalityTrait];
+            if (bonus) workRate += CONSTRUCTION_WORK_RATE * bonus;
+          }
+        }
       }
 
       bld.constructionProgress += workRate / (bld.constructionWork || 100);

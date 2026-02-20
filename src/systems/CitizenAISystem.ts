@@ -14,6 +14,8 @@ import {
   COOKED_FOOD_TYPES, COOKED_MEAL_RESTORE, COOKED_MEAL_COST,
   COOKED_MEAL_WARMTH_BOOST, COOKED_MEAL_HAPPINESS_BOOST,
   COOKED_MEAL_ENERGY_BOOST, ResourceType,
+  TRAIT_SOCIAL_CHANCE_MULT, TRAIT_HAPPINESS_GAIN_MULT,
+  TRAIT_WANDER_HAPPINESS, PersonalityTrait,
 } from '../constants';
 import { distance } from '../utils/MathUtils';
 
@@ -189,6 +191,11 @@ export class CitizenAISystem {
       if (this.trySocialize(id, citizen, needs)) continue;
 
       // 9. Wander randomly
+      // Adventurous trait — gain happiness from wandering
+      if (this.hasTrait(citizen, PersonalityTrait.ADVENTUROUS)) {
+        const wanderHappy = TRAIT_WANDER_HAPPINESS[PersonalityTrait.ADVENTUROUS] || 0;
+        needs.happiness = Math.min(100, needs.happiness + wanderHappy);
+      }
       this.wander(id);
     }
   }
@@ -341,9 +348,27 @@ export class CitizenAISystem {
     this.goHome(id);
   }
 
+  /** Get trait multiplier for a given trait map */
+  private getTraitMult(citizen: any, traitMap: Partial<Record<PersonalityTrait, number>>): number {
+    const traits: string[] = citizen.traits || [];
+    let mult = 1;
+    for (const t of traits) {
+      const v = traitMap[t as PersonalityTrait];
+      if (v !== undefined) mult *= v;
+    }
+    return mult;
+  }
+
+  /** Check if citizen has a specific trait */
+  private hasTrait(citizen: any, trait: PersonalityTrait): boolean {
+    return (citizen.traits || []).includes(trait);
+  }
+
   /** Try to chat with a nearby citizen */
   private trySocialize(id: EntityId, citizen: any, needs: any): boolean {
-    if (Math.random() > SOCIAL_CHAT_CHANCE) return false;
+    // Trait affects social chance
+    const socialMult = this.getTraitMult(citizen, TRAIT_SOCIAL_CHANCE_MULT);
+    if (Math.random() > SOCIAL_CHAT_CHANCE * socialMult) return false;
 
     const pos = this.game.world.getComponent<any>(id, 'position')!;
     const citizens = this.game.world.getComponentStore<any>('citizen');
@@ -361,7 +386,8 @@ export class CitizenAISystem {
         // Start chatting
         citizen.chatTimer = SOCIAL_CHAT_DURATION;
         needs.lastSocialTick = this.game.state.tick;
-        needs.happiness = Math.min(100, needs.happiness + CHAT_HAPPINESS_GAIN);
+        const happyMult = this.getTraitMult(citizen, TRAIT_HAPPINESS_GAIN_MULT);
+        needs.happiness = Math.min(100, needs.happiness + CHAT_HAPPINESS_GAIN * happyMult);
         return true;
       }
     }
