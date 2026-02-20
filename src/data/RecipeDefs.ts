@@ -74,4 +74,33 @@ export const RECIPE_DEFS: RecipeDef[] = [
     cooldownTicks: 300,  // ~4h per harvest cycle (was 200), bigger yield
     seasonalMultiplier: true,
   },
+  // Bakery recipes — cycles through all 4 recipes in round-robin
+  // Bread: wheat → bread (staple, reliable)
+  {
+    buildingType: BuildingType.BAKERY,
+    inputs: { [ResourceType.WHEAT]: 3 },
+    outputs: { [ResourceType.BREAD]: 4 },
+    cooldownTicks: 150,  // ~2h per batch
+  },
+  // Fish Stew: fish + potato → hearty meal (warmth boost)
+  {
+    buildingType: BuildingType.BAKERY,
+    inputs: { [ResourceType.FISH]: 2, [ResourceType.POTATO]: 2 },
+    outputs: { [ResourceType.FISH_STEW]: 3 },
+    cooldownTicks: 200,  // ~2.7h per batch
+  },
+  // Berry Pie: berries + wheat → sweet treat (energy boost)
+  {
+    buildingType: BuildingType.BAKERY,
+    inputs: { [ResourceType.BERRIES]: 3, [ResourceType.WHEAT]: 2 },
+    outputs: { [ResourceType.BERRY_PIE]: 3 },
+    cooldownTicks: 200,  // ~2.7h per batch
+  },
+  // Vegetable Soup: cabbage + potato + roots → balanced meal (warmth boost)
+  {
+    buildingType: BuildingType.BAKERY,
+    inputs: { [ResourceType.CABBAGE]: 2, [ResourceType.POTATO]: 2, [ResourceType.ROOTS]: 1 },
+    outputs: { [ResourceType.VEGETABLE_SOUP]: 3 },
+    cooldownTicks: 180,  // ~2.4h per batch
+  },
 ];

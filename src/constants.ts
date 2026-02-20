@@ -298,6 +298,13 @@ export const TREE_GROWTH_TICKS = 3000;         // worker-ticks per density level
 export const STONE_DEPOSIT_AMOUNT = 50;        // starting amount in each stone deposit tile
 export const IRON_DEPOSIT_AMOUNT = 30;         // starting amount in each iron deposit tile
 
+// Cooking / Meal quality
+export const COOKED_MEAL_RESTORE = 45;          // cooked food restores 45 food (vs 30 raw)
+export const COOKED_MEAL_COST = 2;              // cooked meals cost 2 units (vs 3 raw)
+export const COOKED_MEAL_WARMTH_BOOST = 5;      // warmth gained from eating hot food (stew/soup)
+export const COOKED_MEAL_HAPPINESS_BOOST = 2;   // happiness gained from eating cooked food
+export const COOKED_MEAL_ENERGY_BOOST = 5;      // energy boost from hearty meals (pie)
+
 // Festivals
 export const FESTIVAL_DURATION_TICKS = 600;           // how long a festival lasts (~1 minute real at 1x)
 export const FESTIVAL_HAPPINESS_BOOST = 15;           // happiness added when festival starts
@@ -360,6 +367,11 @@ export const ResourceType = {
   WHEAT: 'wheat',
   CABBAGE: 'cabbage',
   POTATO: 'potato',
+  // Cooked meals
+  BREAD: 'bread',
+  FISH_STEW: 'fish_stew',
+  BERRY_PIE: 'berry_pie',
+  VEGETABLE_SOUP: 'vegetable_soup',
 } as const;
 export type ResourceType = (typeof ResourceType)[keyof typeof ResourceType];
 
@@ -373,6 +385,15 @@ export const FOOD_TYPES: ResourceType[] = [
   ResourceType.CABBAGE,
   ResourceType.POTATO,
 ];
+
+export const COOKED_FOOD_TYPES: ResourceType[] = [
+  ResourceType.BREAD,
+  ResourceType.FISH_STEW,
+  ResourceType.BERRY_PIE,
+  ResourceType.VEGETABLE_SOUP,
+];
+
+export const ALL_FOOD_TYPES: ResourceType[] = [...FOOD_TYPES, ...COOKED_FOOD_TYPES];
 
 export const BuildingType = {
   WOODEN_HOUSE: 'wooden_house',
@@ -392,6 +413,7 @@ export const BuildingType = {
   TRADING_POST: 'trading_post',
   ROAD: 'road',
   TOWN_HALL: 'town_hall',
+  BAKERY: 'bakery',
 } as const;
 export type BuildingType = (typeof BuildingType)[keyof typeof BuildingType];
 
@@ -410,6 +432,7 @@ export const Profession = {
   TEACHER: 'teacher',
   TRADER: 'trader',
   BUILDER: 'builder',
+  BAKER: 'baker',
 } as const;
 export type Profession = (typeof Profession)[keyof typeof Profession];
 

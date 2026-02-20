@@ -1,6 +1,6 @@
 import type { Game } from '../Game';
 import {
-  BuildingType, ResourceType, FOOD_TYPES, FOOD_SPOILAGE_RATE, BARN_SPOILAGE_MULT,
+  BuildingType, ResourceType, ALL_FOOD_TYPES, FOOD_SPOILAGE_RATE, BARN_SPOILAGE_MULT,
   STORAGE_CHECK_INTERVAL, HOUSE_FIREWOOD_MIN, HOUSE_FIREWOOD_TARGET,
   HOUSE_WARMTH_GAIN_FROM_FIRE, HOUSE_FIREWOOD_CONSUMPTION,
   HOUSE_WARMTH_LOSS_NO_FIRE, MARKET_HAPPINESS_GAIN,
@@ -94,7 +94,7 @@ export class StorageSystem {
     }
 
     // Spoil each food type
-    const allFoodTypes = ['food', ...FOOD_TYPES];
+    const allFoodTypes = ['food', ...ALL_FOOD_TYPES];
     for (const type of allFoodTypes) {
       const current = this.game.getResource(type);
       if (current > 0) {

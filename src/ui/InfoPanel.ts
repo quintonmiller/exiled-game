@@ -459,6 +459,7 @@ export class InfoPanel {
       case 'trading': return 'Trading';
       case 'school': return 'At school';
       case 'celebrating': return 'Celebrating';
+      case 'baking': return 'Baking';
       default: return activity.charAt(0).toUpperCase() + activity.slice(1);
     }
   }

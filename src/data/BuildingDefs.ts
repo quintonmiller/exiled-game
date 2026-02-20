@@ -170,6 +170,16 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 5,         // nearly instant
     description: 'Citizens walk 2x faster on roads. Cheap to build.',
   },
+  [BuildingType.BAKERY]: {
+    type: BuildingType.BAKERY,
+    name: 'Bakery',
+    category: BuildingCategory.FOOD,
+    width: 3, height: 3,
+    costLog: 36, costStone: 24, costIron: 8,
+    maxWorkers: 2, workRadius: 0,
+    constructionWork: 250,       // 5 workers → 22h
+    description: 'Cooks raw ingredients into meals. Cooked food restores more and gives buffs. 2 workers.',
+  },
   [BuildingType.TOWN_HALL]: {
     type: BuildingType.TOWN_HALL,
     name: 'Town Hall',

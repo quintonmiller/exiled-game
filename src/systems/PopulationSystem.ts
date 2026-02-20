@@ -512,6 +512,7 @@ export class PopulationSystem {
       [BuildingType.MARKET]: Profession.VENDOR,
       [BuildingType.SCHOOL]: Profession.TEACHER,
       [BuildingType.TRADING_POST]: Profession.TRADER,
+      [BuildingType.BAKERY]: Profession.BAKER,
     };
     return map[type] || Profession.LABORER;
   }

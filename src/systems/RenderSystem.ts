@@ -300,6 +300,7 @@ export class RenderSystem {
     school:      { symbol: 'S',  color: '#aaaadd' },
     working:     { symbol: 'W',  color: '#cccccc' },
     celebrating: { symbol: '\u266B', color: '#ffdd44' },
+    baking:      { symbol: 'K',  color: '#dd8844' },
   };
 
   private drawCitizen(
@@ -507,7 +508,7 @@ export class RenderSystem {
       const labels = ['Log', 'Stn', 'Irn', 'Fwd', 'Tol', 'Cot'];
       let totalFood = 0;
       for (const [key, val] of resources) {
-        if (['berries', 'mushrooms', 'roots', 'venison', 'fish', 'wheat', 'cabbage', 'potato', 'food'].includes(key)) {
+        if (['berries', 'mushrooms', 'roots', 'venison', 'fish', 'wheat', 'cabbage', 'potato', 'food', 'bread', 'fish_stew', 'berry_pie', 'vegetable_soup'].includes(key)) {
           totalFood += val;
         }
       }

@@ -37,8 +37,19 @@ export class ProductionSystem {
       const bld = buildings.get(id);
       if (!bld || !bld.completed) continue;
 
-      const recipe = RECIPE_DEFS.find(r => r.buildingType === bld.type);
-      if (!recipe) continue;
+      // Find all matching recipes — buildings with multiple recipes cycle through them
+      const matchingRecipes = RECIPE_DEFS.filter(r => r.buildingType === bld.type);
+      if (matchingRecipes.length === 0) continue;
+
+      // Pick recipe: for single-recipe buildings use that one; for multi-recipe, pick the
+      // first one whose inputs are available (round-robin via recipeIndex on the producer)
+      let recipe;
+      if (matchingRecipes.length === 1) {
+        recipe = matchingRecipes[0];
+      } else {
+        if (producer.recipeIndex === undefined) producer.recipeIndex = 0;
+        recipe = matchingRecipes[producer.recipeIndex % matchingRecipes.length];
+      }
 
       const workerCount = this.countWorkersAtBuilding(id);
       producer.workerCount = workerCount;
@@ -112,7 +123,14 @@ export class ProductionSystem {
           }
         }
 
-        if (!hasInputs) continue;
+        if (!hasInputs) {
+          // For multi-recipe buildings, try next recipe
+          if (matchingRecipes.length > 1) {
+            producer.recipeIndex = ((producer.recipeIndex || 0) + 1) % matchingRecipes.length;
+            producer.timer = recipe.cooldownTicks * 0.9; // Try again soon
+          }
+          continue;
+        }
 
         // --- Resource depletion: consume trees when gathering ---
         if (recipe.gatherFromRadius && pos) {
@@ -134,6 +152,11 @@ export class ProductionSystem {
             produced = Math.ceil(produced * EDUCATION_BONUS);
           }
           this.game.addResource(res, produced);
+        }
+
+        // Cycle recipe index for multi-recipe buildings
+        if (matchingRecipes.length > 1) {
+          producer.recipeIndex = ((producer.recipeIndex || 0) + 1) % matchingRecipes.length;
         }
       }
 

@@ -11,6 +11,9 @@ import {
   WANDER_ATTEMPTS, WANDER_RANGE, FORCE_WANDER_ATTEMPTS,
   FORCE_WANDER_RANGE, FORCE_WANDER_MIN_DIST,
   PREGNANT_MEAL_THRESHOLD_BOOST,
+  COOKED_FOOD_TYPES, COOKED_MEAL_RESTORE, COOKED_MEAL_COST,
+  COOKED_MEAL_WARMTH_BOOST, COOKED_MEAL_HAPPINESS_BOOST,
+  COOKED_MEAL_ENERGY_BOOST, ResourceType,
 } from '../constants';
 import { distance } from '../utils/MathUtils';
 
@@ -249,16 +252,39 @@ export class CitizenAISystem {
     this.wander(id);
   }
 
+  /** Check if a food type is cooked */
+  private isCooked(type: string): boolean {
+    return (COOKED_FOOD_TYPES as readonly string[]).includes(type);
+  }
+
   /** Eat a discrete meal from global food supply, tracking diet variety */
   private eatMeal(id: EntityId): void {
     const totalFood = this.game.getTotalFood();
-    if (totalFood >= MEAL_COST) {
+    if (totalFood >= COOKED_MEAL_COST) {
       const needs = this.game.world.getComponent<any>(id, 'needs')!;
       if (!needs.recentDiet) needs.recentDiet = [];
 
-      const result = this.game.removeFoodPreferVariety(MEAL_COST, needs.recentDiet);
+      // Try cooked food first (costs less, restores more)
+      const cookedCost = COOKED_MEAL_COST;
+      const result = this.game.removeFoodPreferVariety(cookedCost, needs.recentDiet);
       if (result.eaten > 0) {
-        needs.food = Math.min(100, needs.food + MEAL_RESTORE);
+        const cooked = this.isCooked(result.type);
+        const restore = cooked ? COOKED_MEAL_RESTORE : MEAL_RESTORE;
+        needs.food = Math.min(100, needs.food + restore);
+
+        // Cooked food buffs
+        if (cooked) {
+          needs.happiness = Math.min(100, needs.happiness + COOKED_MEAL_HAPPINESS_BOOST);
+          // Stew and soup give warmth
+          if (result.type === ResourceType.FISH_STEW || result.type === ResourceType.VEGETABLE_SOUP) {
+            needs.warmth = Math.min(100, needs.warmth + COOKED_MEAL_WARMTH_BOOST);
+          }
+          // Pie gives energy
+          if (result.type === ResourceType.BERRY_PIE) {
+            needs.energy = Math.min(100, (needs.energy ?? 100) + COOKED_MEAL_ENERGY_BOOST);
+          }
+        }
+
         // Track diet history
         needs.recentDiet.push(result.type);
         if (needs.recentDiet.length > DIET_HISTORY_SIZE) {
@@ -288,7 +314,11 @@ export class CitizenAISystem {
 
       const result = this.game.removeFoodPreferVariety(MEAL_COST, needs.recentDiet);
       if (result.eaten > 0) {
-        needs.food = Math.min(100, needs.food + MEAL_RESTORE);
+        const cooked = this.isCooked(result.type);
+        needs.food = Math.min(100, needs.food + (cooked ? COOKED_MEAL_RESTORE : MEAL_RESTORE));
+        if (cooked) {
+          needs.happiness = Math.min(100, needs.happiness + COOKED_MEAL_HAPPINESS_BOOST);
+        }
         needs.recentDiet.push(result.type);
         if (needs.recentDiet.length > DIET_HISTORY_SIZE) {
           needs.recentDiet.shift();
@@ -561,6 +591,7 @@ export class CitizenAISystem {
       case Profession.TEACHER: return 'teaching';
       case Profession.TRADER: return 'trading';
       case Profession.BUILDER: return 'building';
+      case Profession.BAKER: return 'baking';
       default: return 'working';
     }
   }

@@ -29,7 +29,8 @@ import { GameState, EntityId } from './types';
 import { SaveData } from './save/SaveTypes';
 import {
   TILE_SIZE, STARTING_ADULTS, STARTING_CHILDREN, CITIZEN_SPEED,
-  STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES,
+  STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES, ALL_FOOD_TYPES, COOKED_FOOD_TYPES,
+  COOKED_MEAL_RESTORE, COOKED_MEAL_COST,
   SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET,
 } from './constants';
 
@@ -750,22 +751,27 @@ export class Game {
     return removed;
   }
 
-  /** Get total food across all food types */
+  /** Get total food across all food types (raw + cooked) */
   getTotalFood(): number {
     let total = 0;
-    for (const ft of FOOD_TYPES) {
+    for (const ft of ALL_FOOD_TYPES) {
       total += this.getResource(ft);
     }
     total += this.getResource('food'); // generic starting food
     return total;
   }
 
-  /** Remove food (picks from available types) */
+  /** Remove food (picks from available types — prefers cooked food) */
   removeFood(amount: number): number {
     let remaining = amount;
-    // Try generic food first
+    // Try cooked food first (higher value)
+    for (const ft of COOKED_FOOD_TYPES) {
+      if (remaining <= 0) break;
+      remaining -= this.removeResource(ft, remaining);
+    }
+    // Try generic food
     remaining -= this.removeResource('food', remaining);
-    // Then specific types
+    // Then raw food types
     for (const ft of FOOD_TYPES) {
       if (remaining <= 0) break;
       remaining -= this.removeResource(ft, remaining);
@@ -786,7 +792,7 @@ export class Game {
     if (this.getResource('food') >= amount) {
       available.push({ type: 'food', count: dietCounts.get('food') || 0 });
     }
-    for (const ft of FOOD_TYPES) {
+    for (const ft of ALL_FOOD_TYPES) {
       if (this.getResource(ft) >= amount) {
         available.push({ type: ft, count: dietCounts.get(ft) || 0 });
       }
