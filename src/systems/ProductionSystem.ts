@@ -9,6 +9,8 @@ import {
   PLANTING_DAY_CROP_MULT,
   TRAIT_WORK_SPEED_BONUS, PersonalityTrait,
   CropStage, CROP_STAGE_TICKS, CROP_HARVEST_YIELD_MULT, Season,
+  SKILL_EFFICIENCY_PER_LEVEL, SKILL_MASTERY_BONUS_CHANCE,
+  SKILL_MAX_LEVEL, PROFESSION_SKILL_MAP,
 } from '../constants';
 
 export class ProductionSystem {
@@ -81,6 +83,10 @@ export class ProductionSystem {
       // Personality trait work speed bonus/penalty
       const traitBonus = this.getTraitWorkBonus(id);
       efficiency *= (1 + traitBonus);
+
+      // Skill level efficiency bonus
+      const skillBonus = this.getSkillBonus(id, bld.type);
+      efficiency *= (1 + skillBonus);
 
       // Tool check
       const needsTools = this.buildingNeedsTools(bld.type);
@@ -158,10 +164,15 @@ export class ProductionSystem {
         }
 
         // Produce outputs
+        const hasMaster = this.hasSkillMaster(id, bld.type);
         for (const [res, amount] of Object.entries(recipe.outputs)) {
           let produced = amount as number;
           if (educatedCount > 0 && (bld.type === BuildingType.WOOD_CUTTER || bld.type === BuildingType.BLACKSMITH)) {
             produced = Math.ceil(produced * EDUCATION_BONUS);
+          }
+          // Mastery bonus: chance of extra output
+          if (hasMaster && Math.random() < SKILL_MASTERY_BONUS_CHANCE) {
+            produced += 1;
           }
           this.game.addResource(res, produced);
         }
@@ -316,6 +327,42 @@ export class ProductionSystem {
       if (worker.workplaceId === buildingId) count++;
     }
     return count;
+  }
+
+  /** Get average skill level bonus for workers at a building */
+  private getSkillBonus(buildingId: number, buildingType: string): number {
+    const world = this.game.world;
+    const workers = world.getComponentStore<any>('worker');
+    if (!workers) return 0;
+
+    // Determine which skill this building uses via profession mapping
+    let totalBonus = 0;
+    let count = 0;
+
+    for (const [, worker] of workers) {
+      if (worker.workplaceId !== buildingId) continue;
+      count++;
+      const skillType = PROFESSION_SKILL_MAP[worker.profession];
+      if (!skillType || !worker.skills?.[skillType]) continue;
+      totalBonus += worker.skills[skillType].level * SKILL_EFFICIENCY_PER_LEVEL;
+    }
+
+    return count > 0 ? totalBonus / count : 0;
+  }
+
+  /** Check if any worker at the building has mastery (level 5) in the relevant skill */
+  private hasSkillMaster(buildingId: number, buildingType: string): boolean {
+    const world = this.game.world;
+    const workers = world.getComponentStore<any>('worker');
+    if (!workers) return false;
+
+    for (const [, worker] of workers) {
+      if (worker.workplaceId !== buildingId) continue;
+      const skillType = PROFESSION_SKILL_MAP[worker.profession];
+      if (!skillType || !worker.skills?.[skillType]) continue;
+      if (worker.skills[skillType].level >= SKILL_MAX_LEVEL) return true;
+    }
+    return false;
   }
 
   /** Average work speed trait bonus for all workers at a building */

@@ -325,6 +325,39 @@ export const TRAIT_WANDER_HAPPINESS: Partial<Record<PersonalityTrait, number>> =
 export const MAX_TRAITS_PER_CITIZEN = 2;
 export const ALL_TRAITS: PersonalityTrait[] = Object.values(PersonalityTrait);
 
+// Citizen Skills
+export const SkillType = {
+  FARMING: 'farming',
+  FORESTRY: 'forestry',
+  MINING: 'mining',
+  COOKING: 'cooking',
+  BUILDING: 'building',
+  GATHERING: 'gathering',
+  FISHING: 'fishing',
+  HUNTING: 'hunting',
+} as const;
+export type SkillType = (typeof SkillType)[keyof typeof SkillType];
+
+export const SKILL_MAX_LEVEL = 5;
+export const SKILL_XP_PER_LEVEL = 500;             // XP needed per level
+export const SKILL_XP_PER_WORK_TICK = 0.1;          // XP gained per tick while working
+export const SKILL_EFFICIENCY_PER_LEVEL = 0.05;     // +5% efficiency per skill level
+export const SKILL_MASTERY_BONUS_CHANCE = 0.1;       // 10% chance of bonus output at level 5
+
+// Mapping from profession to skill type
+export const PROFESSION_SKILL_MAP: Partial<Record<string, SkillType>> = {
+  farmer: SkillType.FARMING,
+  forester: SkillType.FORESTRY,
+  wood_cutter: SkillType.FORESTRY,
+  gatherer: SkillType.GATHERING,
+  hunter: SkillType.HUNTING,
+  fisherman: SkillType.FISHING,
+  blacksmith: SkillType.MINING,
+  baker: SkillType.COOKING,
+  builder: SkillType.BUILDING,
+  laborer: SkillType.BUILDING,
+};
+
 // Crop Growth Stages
 export const CropStage = {
   FALLOW: 0,      // nothing planted

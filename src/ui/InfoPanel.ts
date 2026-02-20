@@ -1,9 +1,9 @@
 import type { Game } from '../Game';
-import { INFO_PANEL_WIDTH, HUD_HEIGHT } from '../constants';
+import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL } from '../constants';
 import { Settings } from '../Settings';
 import { EntityId } from '../types';
 
-const PANEL_HEIGHT = 460;
+const PANEL_HEIGHT = 520;
 const BTN_WIDTH = 120;
 const BTN_HEIGHT = 22;
 
@@ -297,6 +297,38 @@ export class InfoPanel {
             textY += BTN_HEIGHT + 4;
           }
         }
+      }
+
+      // Skills
+      const workerForSkills = world.getComponent<any>(id, 'worker');
+      if (workerForSkills?.skills) {
+        ctx.fillStyle = '#cccccc';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('Skills:', leftX, textY);
+        textY += 14;
+        for (const [skillName, skillData] of Object.entries(workerForSkills.skills)) {
+          const sd = skillData as { xp: number; level: number };
+          const label = (skillName as string).charAt(0).toUpperCase() + (skillName as string).slice(1);
+          const progress = sd.level >= SKILL_MAX_LEVEL ? 100 : (sd.xp / SKILL_XP_PER_LEVEL) * 100;
+          const levelColor = sd.level >= SKILL_MAX_LEVEL ? '#ffdd44' : '#88bbff';
+          ctx.fillStyle = levelColor;
+          ctx.font = '10px monospace';
+          ctx.fillText(`${label} Lv${sd.level}`, leftX, textY + 9);
+          // Mini progress bar
+          const barX = leftX + 90;
+          const barW = w - 110;
+          ctx.fillStyle = '#333';
+          ctx.fillRect(barX, textY, barW, 10);
+          ctx.fillStyle = levelColor;
+          ctx.fillRect(barX, textY, barW * (progress / 100), 10);
+          if (sd.level >= SKILL_MAX_LEVEL) {
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText('MAX', barX + 2, textY + 8);
+          }
+          textY += 14;
+        }
+        textY += 4;
       }
 
       // Family info

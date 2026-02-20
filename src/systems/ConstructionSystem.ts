@@ -1,5 +1,9 @@
 import type { Game } from '../Game';
-import { EDUCATION_BONUS, CONSTRUCTION_WORK_RATE, EDUCATED_CONSTRUCTION_BONUS, INITIAL_HOUSE_WARMTH, TRAIT_WORK_SPEED_BONUS, PersonalityTrait } from '../constants';
+import {
+  EDUCATION_BONUS, CONSTRUCTION_WORK_RATE, EDUCATED_CONSTRUCTION_BONUS,
+  INITIAL_HOUSE_WARMTH, TRAIT_WORK_SPEED_BONUS, PersonalityTrait,
+  PROFESSION_SKILL_MAP, SKILL_EFFICIENCY_PER_LEVEL, SkillType,
+} from '../constants';
 
 export class ConstructionSystem {
   private game: Game;
@@ -54,6 +58,15 @@ export class ConstructionSystem {
           for (const trait of cit.traits) {
             const bonus = TRAIT_WORK_SPEED_BONUS[trait as PersonalityTrait];
             if (bonus) workRate += CONSTRUCTION_WORK_RATE * bonus;
+          }
+        }
+        // Skill level bonus (building skill)
+        const workerComp = world.getComponent<any>(wId, 'worker');
+        if (workerComp?.skills) {
+          const skillType = PROFESSION_SKILL_MAP[workerComp.profession] || SkillType.BUILDING;
+          const buildSkill = workerComp.skills[SkillType.BUILDING];
+          if (buildSkill) {
+            workRate += CONSTRUCTION_WORK_RATE * buildSkill.level * SKILL_EFFICIENCY_PER_LEVEL;
           }
         }
       }

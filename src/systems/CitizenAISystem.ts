@@ -16,6 +16,8 @@ import {
   COOKED_MEAL_ENERGY_BOOST, ResourceType,
   TRAIT_SOCIAL_CHANCE_MULT, TRAIT_HAPPINESS_GAIN_MULT,
   TRAIT_WANDER_HAPPINESS, PersonalityTrait,
+  PROFESSION_SKILL_MAP, SKILL_XP_PER_WORK_TICK,
+  SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL,
 } from '../constants';
 import { distance } from '../utils/MathUtils';
 
@@ -165,6 +167,8 @@ export class CitizenAISystem {
         citizen.activity = this.professionActivity(worker.profession);
         if (this.isNearBuilding(id, worker.workplaceId)) {
           movement.stuckTicks = 0; // Working, not stuck
+          // Grant skill XP while working
+          this.grantSkillXP(worker);
           continue;
         }
         if (!this.goToBuilding(id, worker.workplaceId)) {
@@ -181,6 +185,7 @@ export class CitizenAISystem {
           citizen.activity = 'building';
           if (this.isNearBuilding(id, site)) {
             movement.stuckTicks = 0;
+            this.grantSkillXP(worker);
             continue;
           }
           if (this.goToBuilding(id, site)) continue;
@@ -346,6 +351,24 @@ export class CitizenAISystem {
 
   private seekWarmth(id: EntityId): void {
     this.goHome(id);
+  }
+
+  /** Grant skill XP to a worker based on their current profession */
+  private grantSkillXP(worker: any): void {
+    const skillType = PROFESSION_SKILL_MAP[worker.profession];
+    if (!skillType) return;
+
+    if (!worker.skills) worker.skills = {};
+    if (!worker.skills[skillType]) worker.skills[skillType] = { xp: 0, level: 0 };
+
+    const skill = worker.skills[skillType];
+    if (skill.level >= SKILL_MAX_LEVEL) return;
+
+    skill.xp += SKILL_XP_PER_WORK_TICK * AI_TICK_INTERVAL;
+    if (skill.xp >= SKILL_XP_PER_LEVEL) {
+      skill.xp -= SKILL_XP_PER_LEVEL;
+      skill.level = Math.min(SKILL_MAX_LEVEL, skill.level + 1);
+    }
   }
 
   /** Get trait multiplier for a given trait map */
