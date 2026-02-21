@@ -1,5 +1,6 @@
 import type { Game } from '../Game';
 import { SEASON_DATA } from '../data/SeasonDefs';
+import { logger } from '../utils/Logger';
 import {
   FOOD_DECAY_PER_TICK, WARMTH_DECAY_PER_TICK,
   STARVATION_HEALTH_DAMAGE, FREEZING_HEALTH_DAMAGE,
@@ -95,6 +96,11 @@ export class NeedsSystem {
       }
       needs.food = Math.max(0, needs.food);
 
+      // Log when food first hits zero (starvation begins)
+      if (needs.food <= 0 && needs.food + FOOD_DECAY_PER_TICK > 0) {
+        logger.warn('NEEDS', `${citizen.name} (${id}) has run out of food — starvation begins`);
+      }
+
       // --- Warmth ---
       let warmthDecay = WARMTH_DECAY_PER_TICK;
       if (seasonData.temperature < 0) {
@@ -126,12 +132,19 @@ export class NeedsSystem {
       needs.warmth -= warmthDecay;
       needs.warmth = Math.max(0, needs.warmth);
 
+      // Log when warmth first hits zero
+      if (needs.warmth <= 0 && needs.warmth + warmthDecay > 0) {
+        logger.warn('NEEDS', `${citizen.name} (${id}) warmth depleted — temp=${seasonData.temperature}, hasCoat=${this.game.getResource(ResourceType.COAT) > 0}, atHome=${isAtHome}`);
+      }
+
       // --- Health ---
       if (needs.food <= 0) {
         needs.health -= STARVATION_HEALTH_DAMAGE;
+        logger.debug('NEEDS', `${citizen.name} (${id}) starving: health ${needs.health.toFixed(1)} (-${STARVATION_HEALTH_DAMAGE})`);
       }
       if (needs.warmth <= 0 && seasonData.temperature < FREEZING_TEMP_THRESHOLD) {
         needs.health -= FREEZING_HEALTH_DAMAGE;
+        logger.debug('NEEDS', `${citizen.name} (${id}) freezing: health ${needs.health.toFixed(1)} (-${FREEZING_HEALTH_DAMAGE})`);
       }
 
       // Natural health regeneration (when well-fed, warm, and rested)
@@ -191,6 +204,11 @@ export class NeedsSystem {
         } else if (uniqueTypes <= 1) {
           needs.happiness = Math.max(0, needs.happiness + DIET_MONOTONY_HAPPINESS);
         }
+      }
+
+      // Periodic needs snapshot (every 300 ticks ≈ 30s at 1x)
+      if (this.game.state.tick % 300 === 0) {
+        logger.debug('NEEDS', `${citizen.name} (${id}): food=${needs.food.toFixed(1)} warmth=${needs.warmth.toFixed(1)} health=${needs.health.toFixed(1)} energy=${needs.energy.toFixed(1)} happy=${needs.happiness.toFixed(1)} sleeping=${citizen.isSleeping}`);
       }
 
       // --- Death ---
@@ -253,7 +271,19 @@ export class NeedsSystem {
 
   private killCitizen(id: number): void {
     const citizen = this.game.world.getComponent<any>(id, 'citizen');
+    const needs = this.game.world.getComponent<any>(id, 'needs');
     const name = citizen?.name || 'Unknown';
+
+    // Determine cause of death
+    const causes: string[] = [];
+    if (needs) {
+      if (needs.food <= 0) causes.push('starvation');
+      if (needs.warmth <= 0) causes.push('freezing');
+      if (needs.isSick) causes.push('disease');
+      if (citizen && citizen.age > OLD_AGE) causes.push(`old age (${citizen.age})`);
+    }
+    const cause = causes.length > 0 ? causes.join(' + ') : 'unknown';
+    logger.error('NEEDS', `${name} (${id}) DIED — cause: ${cause}, age=${citizen?.age}, food=${needs?.food?.toFixed(1)}, warmth=${needs?.warmth?.toFixed(1)}, health=${needs?.health?.toFixed(1)}, energy=${needs?.energy?.toFixed(1)}`);
 
     // Remove from family
     const family = this.game.world.getComponent<any>(id, 'family');

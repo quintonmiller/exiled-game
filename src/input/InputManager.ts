@@ -9,6 +9,7 @@ export class InputManager {
   middleDown = false;
   scrollDelta = 0;
   private clickListeners: Array<(x: number, y: number, button: number) => void> = [];
+  private mouseDownListeners: Array<(x: number, y: number, button: number) => void> = [];
   private canvas: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -17,7 +18,7 @@ export class InputManager {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.key.toLowerCase());
       // Prevent default for game keys
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'f3'].includes(e.key.toLowerCase())) {
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'f3', 'f4'].includes(e.key.toLowerCase())) {
         e.preventDefault();
       }
     });
@@ -35,6 +36,7 @@ export class InputManager {
       if (e.button === 0) this.leftDown = true;
       if (e.button === 1) this.middleDown = true;
       if (e.button === 2) this.rightDown = true;
+      this.mouseDownListeners.forEach(fn => fn(e.clientX, e.clientY, e.button));
     });
 
     canvas.addEventListener('mouseup', (e) => {
@@ -59,6 +61,10 @@ export class InputManager {
 
   onClick(fn: (x: number, y: number, button: number) => void): void {
     this.clickListeners.push(fn);
+  }
+
+  onMouseDown(fn: (x: number, y: number, button: number) => void): void {
+    this.mouseDownListeners.push(fn);
   }
 
   isKeyDown(key: string): boolean {

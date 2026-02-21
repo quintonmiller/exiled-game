@@ -8,6 +8,7 @@ import { InfoPanel } from './InfoPanel';
 import { Minimap } from './Minimap';
 import { EventLog } from './EventLog';
 import { Settings } from '../Settings';
+import { logger, LOG_LEVEL_NAMES } from '../utils/Logger';
 
 export class UIManager {
   private game: Game;
@@ -51,6 +52,32 @@ export class UIManager {
     game.eventBus.on('milestone_achieved', (data: any) => {
       this.addNotification(`Milestone: ${data.name}!`, '#ffcc00');
     });
+  }
+
+  /** Pure hit-test: returns true if the point is over any UI element (no side effects) */
+  isPointOverUI(screenX: number, screenY: number): boolean {
+    const s = Settings.get('uiScale');
+    const x = screenX / s;
+    const y = screenY / s;
+
+    // HUD bar
+    if (y < HUD_HEIGHT) return true;
+
+    // Build menu
+    if (this.buildMenuOpen) {
+      const menuY = this.game.logicalHeight / s - BUILD_MENU_HEIGHT;
+      if (y >= menuY) return true;
+    }
+
+    // Minimap
+    const mmPos = this.minimap.getPosition(this.game.logicalHeight / s, this.buildMenuOpen, BUILD_MENU_HEIGHT);
+    if (x >= mmPos.x && x <= mmPos.x + MINIMAP_SIZE &&
+        y >= mmPos.y && y <= mmPos.y + MINIMAP_SIZE) return true;
+
+    // Event log
+    if (this.eventLog.visible && this.eventLog.isPointOver(screenX, screenY)) return true;
+
+    return false;
   }
 
   handleClick(screenX: number, screenY: number): boolean {
@@ -101,6 +128,7 @@ export class UIManager {
       const nextIdx = (currentIdx + 1) % speeds.length;
       this.game.state.speed = speeds[nextIdx];
       this.game.state.paused = false;
+      this.game.loop.setSpeed(speeds[nextIdx]);
     }
   }
 
@@ -309,6 +337,7 @@ export class UIManager {
     const panelW = 240;
     const lines: string[] = [
       `-- DEBUG (F3) --`,
+      `Log Level: ${LOG_LEVEL_NAMES[logger.level]} [F4 to cycle]`,
       `Entities: ${world.getEntityCount()}`,
       `Citizens: ${citizens.size}`,
       `Moving: ${movingCount}  Idle: ${idleCount}  Stuck: ${stuckCount}`,
@@ -360,21 +389,23 @@ export class UIManager {
       const worker = workers?.get(id);
       const need = needs?.get(id);
 
-      // Small label above citizen
-      let label = '';
+      // Small label above citizen — use the activity string set by CitizenAISystem
+      const cit = citizens.get(id);
+      let label = cit?.activity || 'idle';
       let color = '#88ff88';
 
       if (mov?.stuckTicks > 30) {
         label = 'STUCK';
         color = '#ff4444';
+      } else if (cit?.isSleeping) {
+        label = 'sleeping';
+        color = '#8888cc';
       } else if (mov?.moving) {
-        label = 'moving';
+        label = label + '...';
         color = '#88ff88';
       } else if (worker?.workplaceId !== null && worker?.workplaceId !== undefined) {
-        label = worker.profession?.substring(0, 6) || 'work';
         color = '#88aaff';
-      } else {
-        label = 'idle';
+      } else if (label === 'idle') {
         color = '#aaaaaa';
       }
 

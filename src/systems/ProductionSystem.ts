@@ -1,6 +1,7 @@
 import type { Game } from '../Game';
 import { RECIPE_DEFS } from '../data/RecipeDefs';
 import { SEASON_DATA } from '../data/SeasonDefs';
+import { logger } from '../utils/Logger';
 import {
   EDUCATION_BONUS, BuildingType, ResourceType,
   NO_TOOL_PRODUCTION_MULT, TOOL_WEAR_PER_TICK,
@@ -184,6 +185,7 @@ export class ProductionSystem {
             produced += 1;
           }
           this.game.addResource(res, produced);
+          logger.debug('PRODUCTION', `${bld.type} produced ${produced} ${res} (workers=${workerCount}, efficiency=${efficiency.toFixed(2)})`);
         }
 
         // Cycle recipe index for multi-recipe buildings
@@ -252,6 +254,7 @@ export class ProductionSystem {
       }
       // Harvest also produces hay (straw from wheat stalks)
       this.game.addResource(ResourceType.HAY, HAY_FROM_WHEAT * workerCount);
+      logger.info('PRODUCTION', `Crop field harvested — workers=${workerCount}`);
       // Reset to fallow after harvest
       producer.cropStage = CropStage.FALLOW;
       producer.cropGrowthTimer = 0;

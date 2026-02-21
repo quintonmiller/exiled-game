@@ -187,6 +187,16 @@ export class EventLog {
     this.scrollOffset = maxScroll;
   }
 
+  /** Pure hit-test: returns true if the point is over the event log panel (no side effects) */
+  isPointOver(screenX: number, screenY: number): boolean {
+    if (!this.visible) return false;
+    const s = Settings.get('uiScale');
+    const x = screenX / s;
+    const y = screenY / s;
+    const pr = this.panelRect;
+    return x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h;
+  }
+
   handleClick(screenX: number, screenY: number): boolean {
     if (!this.visible) return false;
 

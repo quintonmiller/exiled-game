@@ -1,4 +1,5 @@
 import type { Game } from '../Game';
+import { logger } from '../utils/Logger';
 import {
   BuildingType, ResourceType, ALL_FOOD_TYPES, FOOD_SPOILAGE_RATE, BARN_SPOILAGE_MULT,
   STORAGE_CHECK_INTERVAL, HOUSE_FIREWOOD_MIN, HOUSE_FIREWOOD_TARGET,
@@ -52,6 +53,7 @@ export class StorageSystem {
         house.firewood -= HOUSE_FIREWOOD_CONSUMPTION;
         if (house.firewood < 0) house.firewood = 0;
       } else {
+        logger.debug('STORAGE', `House (${id}) out of firewood — warmth dropping (${house.warmthLevel.toFixed(1)} → ${Math.max(0, house.warmthLevel - HOUSE_WARMTH_LOSS_NO_FIRE).toFixed(1)})`);
         house.warmthLevel = Math.max(0, house.warmthLevel - HOUSE_WARMTH_LOSS_NO_FIRE);
       }
     }
@@ -94,13 +96,18 @@ export class StorageSystem {
     }
 
     // Spoil each food type
+    let totalSpoiled = 0;
     const allFoodTypes = ['food', ...ALL_FOOD_TYPES];
     for (const type of allFoodTypes) {
       const current = this.game.getResource(type);
       if (current > 0) {
         const spoiled = Math.max(0.1, current * FOOD_SPOILAGE_RATE * spoilageMult);
         this.game.removeResource(type, spoiled);
+        totalSpoiled += spoiled;
       }
+    }
+    if (totalSpoiled > 0.5) {
+      logger.debug('STORAGE', `Food spoilage: ${totalSpoiled.toFixed(1)} units lost (mult=${spoilageMult.toFixed(2)}, hasBarn=${hasBarn})`);
     }
   }
 

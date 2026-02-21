@@ -2,6 +2,10 @@ import { TileType, ResourceType, BuildingType, BuildingCategory, Profession, Sea
 
 export type EntityId = number;
 
+export type DoorSide = 'north' | 'south' | 'east' | 'west';
+export interface DoorDef { dx: number; dy: number; side: DoorSide; }
+export type Rotation = 0 | 1 | 2 | 3;
+
 export interface TileData {
   type: TileType;
   trees: number;           // 0-5 tree density for forest tiles
@@ -11,6 +15,7 @@ export interface TileData {
   buildingId: EntityId | null;
   stoneAmount: number;     // 0-50+ resource remaining in stone deposit
   ironAmount: number;      // 0-30+ resource remaining in iron deposit
+  blocksMovement: boolean; // does the building on this tile block NPC pathfinding
 }
 
 export interface BuildingDef {
@@ -31,6 +36,13 @@ export interface BuildingDef {
   isStorage?: boolean;
   storageCapacity?: number;
   residents?: number; // max residents for houses
+  blocksMovement?: boolean; // defaults to true; false for open-area buildings (fields, stockpiles)
+  doorDef?: DoorDef;
+  flexible?: boolean;       // enables drag-to-resize placement
+  minWidth?: number;        // minimum drag dimension (default FLEXIBLE_MIN_SIZE)
+  minHeight?: number;
+  maxWidth?: number;        // maximum drag dimension (default FLEXIBLE_MAX_SIZE)
+  maxHeight?: number;
 }
 
 export interface RecipeDef {
@@ -74,6 +86,7 @@ export interface GameState {
   totalBirths: number;
   selectedEntity: EntityId | null;
   placingBuilding: BuildingType | null;
+  placingRotation: Rotation;
   gameOver: boolean;
   // Day/night cycle
   dayProgress: number;  // 0..1 within a single day

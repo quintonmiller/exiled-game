@@ -1,5 +1,9 @@
 import type { Game } from '../Game';
-import { EntityId } from '../types';
+import { EntityId, DoorDef } from '../types';
+import { getDoorEntryTile } from '../utils/DoorUtils';
+import { logger } from '../utils/Logger';
+import { RECIPE_DEFS } from '../data/RecipeDefs';
+import { BUILDING_DEFS } from '../data/BuildingDefs';
 import {
   Profession, TILE_SIZE, BuildingType,
   MEAL_FOOD_THRESHOLD, MEAL_RESTORE, MEAL_COST,
@@ -21,6 +25,36 @@ import {
   TAVERN_HAPPINESS_PER_TICK, TAVERN_VISIT_CHANCE, TAVERN_EVENING_START,
 } from '../constants';
 import { distance } from '../utils/MathUtils';
+
+/** Building types whose workers should roam in the work radius */
+const ROAMING_BUILDING_TYPES = new Set<string>([
+  BuildingType.GATHERING_HUT,
+  BuildingType.HUNTING_CABIN,
+  BuildingType.FORESTER_LODGE,
+  BuildingType.HERBALIST,
+  BuildingType.FISHING_DOCK,
+]);
+
+/** Cache: building type → readable activity label */
+const BUILDING_ACTIVITY_LABELS: Record<string, string> = {
+  [BuildingType.GATHERING_HUT]: 'foraging',
+  [BuildingType.HUNTING_CABIN]: 'hunting game',
+  [BuildingType.FISHING_DOCK]: 'fishing',
+  [BuildingType.FORESTER_LODGE]: 'felling trees',
+  [BuildingType.HERBALIST]: 'gathering herbs',
+  [BuildingType.WOOD_CUTTER]: 'splitting wood',
+  [BuildingType.BLACKSMITH]: 'forging tools',
+  [BuildingType.TAILOR]: 'sewing',
+  [BuildingType.CROP_FIELD]: 'tending crops',
+  [BuildingType.BAKERY]: 'cooking',
+  [BuildingType.MARKET]: 'selling goods',
+  [BuildingType.SCHOOL]: 'teaching',
+  [BuildingType.TRADING_POST]: 'trading',
+  [BuildingType.TAVERN]: 'tending bar',
+  [BuildingType.CHICKEN_COOP]: 'tending chickens',
+  [BuildingType.PASTURE]: 'herding cattle',
+  [BuildingType.DAIRY]: 'making cheese',
+};
 
 export class CitizenAISystem {
   private game: Game;
@@ -72,10 +106,12 @@ export class CitizenAISystem {
         // Wake up when energy is full AND it's daytime
         if (needs.energy >= 100 && !this.game.state.isNight) {
           citizen.isSleeping = false;
+          this.exitBuilding(id);
         }
         // Also wake if starving — survival overrides sleep
         else if (needs.food < STARVING_THRESHOLD) {
           citizen.isSleeping = false;
+          this.exitBuilding(id);
         }
         else {
           continue; // Stay asleep, skip all other AI
@@ -91,12 +127,19 @@ export class CitizenAISystem {
       // Default activity — overridden by decision branches below
       citizen.activity = 'idle';
 
+      // Clear inside-building flag; decision branches re-set it when appropriate
+      this.exitBuilding(id);
+
       movement.stuckTicks++;
 
       // Stuck recovery: if stuck for too many AI cycles, force wander
       if (movement.stuckTicks > STUCK_THRESHOLD) {
-        if (worker?.workplaceId !== null && worker?.workplaceId !== undefined) {
+        // Never unassign manually-assigned workers — they chose this job
+        if (worker?.workplaceId !== null && worker?.workplaceId !== undefined && !worker.manuallyAssigned) {
+          logger.warn('AI', `${citizen.name} (${id}) STUCK for ${movement.stuckTicks} ticks — unassigning from auto-assigned work`);
           this.unassignWorker(id, worker);
+        } else {
+          logger.debug('AI', `${citizen.name} (${id}) STUCK for ${movement.stuckTicks} ticks — force wandering (keeping assignment)`);
         }
         this.forceWander(id);
         movement.stuckTicks = 0;
@@ -116,6 +159,7 @@ export class CitizenAISystem {
       // 1. Starving -> seek food urgently (overrides everything)
       if (needs.food < STARVING_THRESHOLD) {
         citizen.activity = 'starving';
+        logger.warn('AI', `${citizen.name} (${id}) STARVING — food=${needs.food.toFixed(1)}, seeking food urgently`);
         this.seekFood(id);
         continue;
       }
@@ -123,12 +167,14 @@ export class CitizenAISystem {
       // 2. Freezing -> seek warmth (go home)
       if (needs.warmth < FREEZING_WARMTH_THRESHOLD) {
         citizen.activity = 'freezing';
+        logger.info('AI', `${citizen.name} (${id}) freezing — warmth=${needs.warmth.toFixed(1)}, seeking home`);
         this.seekWarmth(id);
         continue;
       }
 
       // 3. Exhausted during day -> go home and sleep
       if (needs.energy < TIRED_THRESHOLD) {
+        logger.debug('AI', `${citizen.name} (${id}) exhausted — energy=${needs.energy.toFixed(1)}, going to sleep`);
         this.goSleep(id, citizen);
         continue;
       }
@@ -146,6 +192,7 @@ export class CitizenAISystem {
         : MEAL_FOOD_THRESHOLD;
       if (needs.food < mealThreshold) {
         citizen.activity = 'eating';
+        logger.debug('AI', `${citizen.name} (${id}) hungry — food=${needs.food.toFixed(1)} < ${mealThreshold}, eating meal`);
         this.eatMeal(id);
         continue;
       }
@@ -165,16 +212,30 @@ export class CitizenAISystem {
 
       // 6. If assigned to a workplace, go work
       if (worker.workplaceId !== null) {
-        citizen.activity = this.professionActivity(worker.profession);
+        const bld = this.game.world.getComponent<any>(worker.workplaceId, 'building');
+        const isConstructionSite = bld && !bld.completed;
+        citizen.activity = isConstructionSite ? 'building'
+          : (BUILDING_ACTIVITY_LABELS[bld?.type] || this.professionActivity(worker.profession));
         if (this.isNearBuilding(id, worker.workplaceId)) {
           movement.stuckTicks = 0; // Working, not stuck
           // Grant skill XP while working
           this.grantSkillXP(worker);
+          // Under construction: just stay near the site (no roaming/entering)
+          if (!isConstructionSite) {
+            // Roaming: gather-type workers patrol the work radius
+            if (bld && ROAMING_BUILDING_TYPES.has(bld.type)) {
+              this.roamInWorkRadius(id, worker.workplaceId, bld);
+            } else if (bld && this.isIndoorBuilding(bld.type)) {
+              this.enterBuilding(id, worker.workplaceId);
+            }
+          }
           continue;
         }
+        // Try to path to workplace — if blocked, just wait and retry next tick
+        // (don't unassign on temporary pathfinding failures)
         if (!this.goToBuilding(id, worker.workplaceId)) {
-          this.unassignWorker(id, worker);
-          citizen.activity = 'idle';
+          // Wander toward the building area instead of standing still
+          this.wander(id);
         }
         continue;
       }
@@ -259,6 +320,7 @@ export class CitizenAISystem {
       if (school !== null) {
         citizen.activity = 'school';
         if (this.isNearBuilding(id, school)) {
+          this.enterBuilding(id, school);
           movement.stuckTicks = 0;
           return;
         }
@@ -288,6 +350,8 @@ export class CitizenAISystem {
       if (result.eaten > 0) {
         const cooked = this.isCooked(result.type);
         const restore = cooked ? COOKED_MEAL_RESTORE : MEAL_RESTORE;
+        const citizen = this.game.world.getComponent<any>(id, 'citizen');
+        logger.debug('AI', `${citizen?.name} (${id}) ate ${result.type} (${cooked ? 'cooked' : 'raw'}): food ${needs.food.toFixed(1)} → ${Math.min(100, needs.food + restore).toFixed(1)}, totalFood remaining=${(totalFood - result.eaten).toFixed(0)}`);
         needs.food = Math.min(100, needs.food + restore);
 
         // Cooked food buffs
@@ -313,12 +377,15 @@ export class CitizenAISystem {
     }
 
     // No food available — walk toward nearest storage
+    const citizen = this.game.world.getComponent<any>(id, 'citizen');
+    logger.warn('AI', `${citizen?.name} (${id}) tried to eat but no food available (total=${totalFood.toFixed(1)})`);
     const storage = this.findNearestStorage(id);
     if (storage !== null) {
       if (!this.isNearBuilding(id, storage)) {
         this.goToBuilding(id, storage);
       }
     } else {
+      logger.warn('AI', `${citizen?.name} (${id}) no storage building found — wandering`);
       this.wander(id);
     }
   }
@@ -333,6 +400,8 @@ export class CitizenAISystem {
       const result = this.game.removeFoodPreferVariety(MEAL_COST, needs.recentDiet);
       if (result.eaten > 0) {
         const cooked = this.isCooked(result.type);
+        const citizen = this.game.world.getComponent<any>(id, 'citizen');
+        logger.info('AI', `${citizen?.name} (${id}) emergency ate ${result.type}: food ${needs.food.toFixed(1)} → ${Math.min(100, needs.food + (cooked ? COOKED_MEAL_RESTORE : MEAL_RESTORE)).toFixed(1)}`);
         needs.food = Math.min(100, needs.food + (cooked ? COOKED_MEAL_RESTORE : MEAL_RESTORE));
         if (cooked) {
           needs.happiness = Math.min(100, needs.happiness + COOKED_MEAL_HAPPINESS_BOOST);
@@ -345,6 +414,8 @@ export class CitizenAISystem {
       }
     }
 
+    const citizen = this.game.world.getComponent<any>(id, 'citizen');
+    logger.error('AI', `${citizen?.name} (${id}) STARVING and NO FOOD in stockpile (total=${totalFood.toFixed(1)})`);
     const storage = this.findNearestStorage(id);
     if (storage !== null) {
       if (!this.isNearBuilding(id, storage)) {
@@ -409,6 +480,7 @@ export class CitizenAISystem {
       if (this.isNearBuilding(id, bldId)) {
         // At tavern — gain happiness
         citizen.activity = 'drinking';
+        this.enterBuilding(id, bldId);
         needs.happiness = Math.min(100, needs.happiness + TAVERN_HAPPINESS_PER_TICK * AI_TICK_INTERVAL);
         needs.lastSocialTick = this.game.state.tick;
         movement.stuckTicks = 0;
@@ -457,8 +529,9 @@ export class CitizenAISystem {
     const family = this.game.world.getComponent<any>(id, 'family');
     if (family?.homeId != null) {
       if (this.isNearBuilding(id, family.homeId)) {
-        // At home — fall asleep
+        // At home — fall asleep inside building
         citizen.isSleeping = true;
+        this.enterBuilding(id, family.homeId);
         const needs = this.game.world.getComponent<any>(id, 'needs');
         if (needs) {
           needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
@@ -470,12 +543,13 @@ export class CitizenAISystem {
       if (this.goToBuilding(id, family.homeId)) return;
     }
 
-    // No home — find any house to sleep near
-    const house = this.findBuilding(BuildingType.WOODEN_HOUSE);
+    // No home — find a house with room to sleep in
+    const house = this.findAvailableHouse(id);
     if (house !== null) {
       if (this.isNearBuilding(id, house)) {
-        // Sleep near a house even if not assigned
+        // Sleep inside a house even if not assigned
         citizen.isSleeping = true;
+        this.enterBuilding(id, house);
         return;
       }
       if (this.goToBuilding(id, house)) return;
@@ -483,18 +557,53 @@ export class CitizenAISystem {
 
     // Truly homeless — sleep where you are if exhausted
     if (this.game.world.getComponent<any>(id, 'needs')!.energy < EMERGENCY_SLEEP_ENERGY) {
+      logger.warn('AI', `${citizen.name} (${id}) homeless and exhausted — sleeping outside`);
       citizen.isSleeping = true;
       return;
     }
 
+    logger.debug('AI', `${citizen.name} (${id}) has no home, wandering`);
     this.wander(id);
+  }
+
+  /** Send a gather-type worker to roam within the building's work radius */
+  private roamInWorkRadius(id: EntityId, buildingId: EntityId, bld: any): void {
+    const bPos = this.game.world.getComponent<any>(buildingId, 'position');
+    if (!bPos) return;
+
+    const radius = bld.workRadius || 15;
+    const cx = bPos.tileX + Math.floor((bld.width || 1) / 2);
+    const cy = bPos.tileY + Math.floor((bld.height || 1) / 2);
+
+    // Pick a random tile within work radius
+    for (let attempt = 0; attempt < WANDER_ATTEMPTS; attempt++) {
+      const ox = this.game.rng.int(-radius, radius);
+      const oy = this.game.rng.int(-radius, radius);
+      if (ox * ox + oy * oy > radius * radius) continue; // stay within circular radius
+
+      const tx = cx + ox;
+      const ty = cy + oy;
+      if (!this.game.tileMap.isWalkable(tx, ty)) continue;
+
+      const pos = this.game.world.getComponent<any>(id, 'position')!;
+      const result = this.game.pathfinder.findPath(pos.tileX, pos.tileY, tx, ty);
+      if (result.found && result.path.length > 1) {
+        const movement = this.game.world.getComponent<any>(id, 'movement')!;
+        movement.path = result.path;
+        movement.targetEntity = buildingId; // still "working" for this building
+        movement.stuckTicks = 0;
+        return;
+      }
+    }
   }
 
   /** Go home (for warmth). Doesn't trigger sleep. */
   private goHome(id: EntityId): void {
+    const citizen = this.game.world.getComponent<any>(id, 'citizen')!;
     const family = this.game.world.getComponent<any>(id, 'family');
     if (family?.homeId != null) {
       if (this.isNearBuilding(id, family.homeId)) {
+        this.enterBuilding(id, family.homeId);
         const needs = this.game.world.getComponent<any>(id, 'needs');
         if (needs) {
           needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
@@ -506,9 +615,12 @@ export class CitizenAISystem {
       if (this.goToBuilding(id, family.homeId)) return;
     }
 
-    const house = this.findBuilding(BuildingType.WOODEN_HOUSE);
+    const house = this.findAvailableHouse(id);
     if (house !== null) {
-      if (this.isNearBuilding(id, house)) return;
+      if (this.isNearBuilding(id, house)) {
+        this.enterBuilding(id, house);
+        return;
+      }
       if (this.goToBuilding(id, house)) return;
     }
 
@@ -525,6 +637,7 @@ export class CitizenAISystem {
     const bw = bld?.width || 1;
     const bh = bld?.height || 1;
 
+    // Fallback perimeter entry points
     const candidates = [
       { x: targetPos.tileX + Math.floor(bw / 2), y: targetPos.tileY + bh },
       { x: targetPos.tileX + Math.floor(bw / 2), y: targetPos.tileY - 1 },
@@ -533,6 +646,23 @@ export class CitizenAISystem {
       { x: targetPos.tileX, y: targetPos.tileY + bh },
       { x: targetPos.tileX + bw - 1, y: targetPos.tileY + bh },
     ];
+
+    // Prefer door entry tile if available
+    const doorDef: DoorDef | undefined = bld?.doorDef;
+    if (doorDef) {
+      const entry = getDoorEntryTile(targetPos.tileX, targetPos.tileY, doorDef);
+      // Prepend door entry, deduplicate
+      const isDuplicate = candidates.some(c => c.x === entry.x && c.y === entry.y);
+      if (!isDuplicate) {
+        candidates.unshift(entry);
+      } else {
+        // Move the duplicate to front
+        const idx = candidates.findIndex(c => c.x === entry.x && c.y === entry.y);
+        if (idx > 0) {
+          candidates.unshift(candidates.splice(idx, 1)[0]);
+        }
+      }
+    }
 
     for (const target of candidates) {
       if (!this.game.tileMap.isWalkable(target.x, target.y)) continue;
@@ -548,6 +678,77 @@ export class CitizenAISystem {
     }
 
     return false;
+  }
+
+  /** Check if a building type represents an indoor (movement-blocking) structure */
+  private isIndoorBuilding(type: string): boolean {
+    const def = BUILDING_DEFS[type];
+    return def ? def.blocksMovement !== false : true;
+  }
+
+  /**
+   * Try to place a citizen inside a building. Returns true if accepted.
+   * Enforces capacity limits — residents and assigned workers are always
+   * admitted to their own home/workplace; visitors are turned away when full.
+   */
+  private enterBuilding(citizenId: EntityId, buildingId: EntityId): boolean {
+    const citizen = this.game.world.getComponent<any>(citizenId, 'citizen');
+    if (!citizen) return false;
+
+    // Already inside this building
+    if (citizen.insideBuildingId === buildingId) return true;
+
+    // Determine capacity
+    const bld = this.game.world.getComponent<any>(buildingId, 'building');
+    const house = this.game.world.getComponent<any>(buildingId, 'house');
+    let capacity: number;
+    if (house) {
+      capacity = house.maxResidents || 5;
+    } else if (bld?.maxWorkers) {
+      // Workplaces: workers + a few visitor slots
+      capacity = bld.maxWorkers + 3;
+    } else {
+      // Fallback based on building area (1 per 2 tiles, minimum 4)
+      capacity = Math.max(4, Math.floor(((bld?.width || 2) * (bld?.height || 2)) / 2));
+    }
+
+    // Check if citizen has a right to enter (resident or assigned worker)
+    const family = this.game.world.getComponent<any>(citizenId, 'family');
+    const worker = this.game.world.getComponent<any>(citizenId, 'worker');
+    const isResident = family?.homeId === buildingId;
+    const isWorker = worker?.workplaceId === buildingId;
+
+    // Residents and workers are always admitted
+    if (!isResident && !isWorker) {
+      // Visitor — check if there's room
+      const currentOccupants = this.getBuildingOccupantCount(buildingId);
+      if (currentOccupants >= capacity) return false;
+    }
+
+    // Exit previous building if entering a different one
+    if (citizen.insideBuildingId != null && citizen.insideBuildingId !== buildingId) {
+      citizen.insideBuildingId = null;
+    }
+
+    citizen.insideBuildingId = buildingId;
+    return true;
+  }
+
+  /** Remove a citizen from whatever building they are inside */
+  private exitBuilding(citizenId: EntityId): void {
+    const citizen = this.game.world.getComponent<any>(citizenId, 'citizen');
+    if (citizen) citizen.insideBuildingId = null;
+  }
+
+  /** Count citizens currently inside a building */
+  private getBuildingOccupantCount(buildingId: EntityId): number {
+    const citizens = this.game.world.getComponentStore<any>('citizen');
+    if (!citizens) return 0;
+    let count = 0;
+    for (const [, cit] of citizens) {
+      if (cit.insideBuildingId === buildingId) count++;
+    }
+    return count;
   }
 
   /** Check if citizen is already near a building (within 2 tiles of any edge) */
@@ -658,6 +859,32 @@ export class CitizenAISystem {
       if (bld.type === type && bld.completed) return id;
     }
     return null;
+  }
+
+  /** Find nearest house with available occupant capacity */
+  private findAvailableHouse(citizenId: EntityId): EntityId | null {
+    const pos = this.game.world.getComponent<any>(citizenId, 'position')!;
+    const buildings = this.game.world.getComponentStore<any>('building');
+    if (!buildings) return null;
+
+    let nearest: EntityId | null = null;
+    let nearestDist = Infinity;
+
+    for (const [id, bld] of buildings) {
+      if (bld.type !== BuildingType.WOODEN_HOUSE || !bld.completed) continue;
+      const house = this.game.world.getComponent<any>(id, 'house');
+      const maxOccupants = house?.maxResidents || bld.residents || 5;
+      if (this.getBuildingOccupantCount(id) >= maxOccupants) continue;
+
+      const bPos = this.game.world.getComponent<any>(id, 'position');
+      if (!bPos) continue;
+      const d = distance(pos.tileX, pos.tileY, bPos.tileX, bPos.tileY);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = id;
+      }
+    }
+    return nearest;
   }
 
   private professionActivity(profession: string): string {

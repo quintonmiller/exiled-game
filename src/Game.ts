@@ -27,13 +27,15 @@ import { LivestockSystem } from './systems/LivestockSystem';
 import { MilestoneSystem } from './systems/MilestoneSystem';
 import { UIManager } from './ui/UIManager';
 import { PlacementController } from './input/PlacementController';
-import { GameState, EntityId } from './types';
+import { GameState, EntityId, DoorDef } from './types';
+import { BUILDING_DEFS } from './data/BuildingDefs';
 import { SaveData } from './save/SaveTypes';
+import { logger, LOG_LEVEL_NAMES } from './utils/Logger';
 import {
   TILE_SIZE, STARTING_ADULTS, STARTING_CHILDREN, CITIZEN_SPEED,
   STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES, ALL_FOOD_TYPES, COOKED_FOOD_TYPES,
   COOKED_MEAL_RESTORE, COOKED_MEAL_COST, ALL_TRAITS, MAX_TRAITS_PER_CITIZEN, PersonalityTrait,
-  SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET,
+  SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET, INITIAL_HOUSE_WARMTH,
 } from './constants';
 
 export class Game {
@@ -77,7 +79,7 @@ export class Game {
   livestockSystem: LivestockSystem;
   milestoneSystem: MilestoneSystem;
   uiManager: UIManager;
-  private loop: GameLoop;
+  loop: GameLoop;
 
   // State
   state: GameState;
@@ -129,6 +131,7 @@ export class Game {
       totalBirths: 0,
       selectedEntity: null,
       placingBuilding: null,
+      placingRotation: 0,
       gameOver: false,
       dayProgress: 0.3,
       isNight: false,
@@ -167,9 +170,23 @@ export class Game {
     this.uiManager = new UIManager(this);
     this.placementController = new PlacementController(this);
 
-    // Input handling
+    // Input handling — mousedown for drag start
+    this.input.onMouseDown((x, y, button) => {
+      if (button === 0 && this.state.placingBuilding) {
+        // Don't start drag if clicking on UI elements (build menu, HUD, minimap, etc.)
+        if (this.uiManager.isPointOverUI(x, y)) return;
+        this.placementController.startDrag(x, y);
+      }
+    });
+
+    // Input handling — mouseup (click) for placement/selection
     this.input.onClick((x, y, button) => {
       if (button === 2) {
+        // Right click cancels drag first
+        if (this.placementController.isDragging()) {
+          this.placementController.cancelDrag();
+          return;
+        }
         // Right click cancels assignment mode
         if (this.state.assigningWorker !== null) {
           this.state.assigningWorker = null;
@@ -178,12 +195,22 @@ export class Game {
         // Right click cancels placement
         if (this.state.placingBuilding) {
           this.state.placingBuilding = null;
+          this.state.placingRotation = 0;
           return;
         }
       }
       if (button === 0) {
         // Check UI first
         if (this.uiManager.handleClick(x, y)) return;
+
+        // If dragging, end drag instead of normal placement
+        if (this.placementController.isDragging()) {
+          this.placementController.endDrag(x, y);
+          return;
+        }
+
+        // If drag was cancelled (e.g. right-click mid-drag), swallow this mouseup
+        if (this.placementController.consumeDragCancelled()) return;
 
         // Assignment mode: click a building to assign worker
         if (this.state.assigningWorker !== null) {
@@ -208,6 +235,9 @@ export class Game {
 
       // Create initial stockpile at start location
       this.createStartingStockpile(startPos.x, startPos.y);
+
+      // Create starting buildings (house + gathering hut)
+      this.createStartingBuildings(startPos.x, startPos.y);
     }
 
     // Game loop
@@ -253,6 +283,7 @@ export class Game {
       tile.buildingId = t[5];
       tile.stoneAmount = t[6];
       tile.ironAmount = t[7];
+      tile.blocksMovement = !!(t as any)[8];
     }
 
     // Restore ECS world
@@ -347,6 +378,13 @@ export class Game {
     const citizens = this.world.getComponentStore('citizen');
     this.state.population = citizens ? citizens.size : 0;
 
+    // Periodic game state summary (every 600 ticks = 1 day)
+    if (this.state.tick % 600 === 0) {
+      const totalFood = this.getTotalFood();
+      const firewood = this.getResource(ResourceType.FIREWOOD);
+      logger.info('GAME', `Day summary (tick=${this.state.tick}): pop=${this.state.population}, food=${totalFood.toFixed(0)}, firewood=${firewood.toFixed(0)}, deaths=${this.state.totalDeaths}, births=${this.state.totalBirths}`);
+    }
+
     // Check game over
     if (this.state.tick > 100 && this.state.population === 0) {
       this.state.gameOver = true;
@@ -410,11 +448,15 @@ export class Game {
       this.input.keys.delete('b');
     }
     if (this.input.isKeyDown('escape')) {
-      // Cancel assignment mode first
-      if (this.state.assigningWorker !== null) {
+      // Cancel drag first
+      if (this.placementController.isDragging()) {
+        this.placementController.cancelDrag();
+      } else if (this.state.assigningWorker !== null) {
+        // Cancel assignment mode
         this.state.assigningWorker = null;
       } else if (this.state.placingBuilding || this.state.selectedEntity !== null) {
         this.state.placingBuilding = null;
+        this.state.placingRotation = 0;
         this.state.selectedEntity = null;
         this.uiManager.closePanels();
       } else {
@@ -423,13 +465,21 @@ export class Game {
       }
       this.input.keys.delete('escape');
     }
-    if (this.input.isKeyDown('r') && this.state.gameOver) {
-      this.restart();
+    if (this.input.isKeyDown('r')) {
+      if (this.state.gameOver) {
+        this.restart();
+      } else if (this.state.placingBuilding) {
+        this.placementController.rotate();
+      }
       this.input.keys.delete('r');
     }
     if (this.input.isKeyDown('f3')) {
       this.uiManager.debugOverlay = !this.uiManager.debugOverlay;
       this.input.keys.delete('f3');
+    }
+    if (this.input.isKeyDown('f4')) {
+      logger.cycleLevel();
+      this.input.keys.delete('f4');
     }
     if (this.input.isKeyDown('l')) {
       this.uiManager.toggleEventLog();
@@ -545,6 +595,7 @@ export class Game {
         maxWorkers: 0,
         workRadius: 0,
         assignedWorkers: [],
+        rotation: 0,
       });
       this.world.addComponent(id, 'storage', {
         inventory: new Map<string, number>(),
@@ -556,8 +607,99 @@ export class Game {
         animFrame: 0,
         visible: true,
       });
-      this.tileMap.markOccupied(sx, sy, 4, 4, id);
+      this.tileMap.markOccupied(sx, sy, 4, 4, id, false); // stockpile doesn't block movement
     }
+  }
+
+  /** Spawn pre-built buildings so early game is survivable */
+  private createStartingBuildings(cx: number, cy: number): void {
+    // House — citizens need shelter to sleep and stay warm
+    this.placeStartingBuilding(BuildingType.WOODEN_HOUSE, cx - 4, cy - 1);
+
+    // Gathering hut — immediate food source while crops grow
+    this.placeStartingBuilding(BuildingType.GATHERING_HUT, cx - 4, cy + 3);
+  }
+
+  /** Place a pre-built building at the given tile, searching nearby if blocked */
+  private placeStartingBuilding(type: string, tx: number, ty: number): void {
+    const def = BUILDING_DEFS[type];
+    if (!def) return;
+
+    // Search in a spiral for a valid placement spot
+    let px = tx;
+    let py = ty;
+    let placed = false;
+    for (let r = 0; r < 8 && !placed; r++) {
+      for (let dx = -r; dx <= r && !placed; dx++) {
+        for (let dy = -r; dy <= r && !placed; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // only check perimeter
+          const cx = tx + dx;
+          const cy = ty + dy;
+          if (this.tileMap.isAreaBuildable(cx, cy, def.width, def.height)) {
+            px = cx;
+            py = cy;
+            placed = true;
+          }
+        }
+      }
+    }
+    if (!placed) return;
+
+    const id = this.world.createEntity();
+
+    this.world.addComponent(id, 'position', {
+      tileX: px, tileY: py,
+      pixelX: px * TILE_SIZE, pixelY: py * TILE_SIZE,
+    });
+
+    this.world.addComponent(id, 'building', {
+      type: def.type,
+      name: def.name,
+      category: def.category,
+      completed: true,
+      constructionProgress: 1,
+      constructionWork: def.constructionWork,
+      width: def.width,
+      height: def.height,
+      maxWorkers: def.maxWorkers,
+      workRadius: def.workRadius,
+      assignedWorkers: [],
+      costLog: 0,
+      costStone: 0,
+      costIron: 0,
+      materialsDelivered: true,
+      isStorage: def.isStorage,
+      storageCapacity: def.storageCapacity,
+      residents: def.residents,
+      durability: 100,
+      rotation: 0,
+      doorDef: def.doorDef,
+    });
+
+    this.world.addComponent(id, 'renderable', {
+      sprite: null, layer: 5, animFrame: 0, visible: true,
+    });
+
+    // Producer component (all completed buildings get this)
+    this.world.addComponent(id, 'producer', {
+      timer: 0, active: false, workerCount: 0,
+    });
+
+    // House component
+    if (type === BuildingType.WOODEN_HOUSE) {
+      this.world.addComponent(id, 'house', {
+        residents: [],
+        firewood: 20,
+        warmthLevel: INITIAL_HOUSE_WARMTH,
+        maxResidents: def.residents || 5,
+      });
+    }
+
+    this.tileMap.markOccupied(px, py, def.width, def.height, id, def.blocksMovement !== false);
+
+    this.eventBus.emit('building_completed', {
+      id, name: def.name, tileX: px, tileY: py,
+    });
   }
 
   /** Generate 1-2 random personality traits (no conflicting pairs) */
@@ -650,10 +792,12 @@ export class Game {
     const bld = this.world.getComponent<any>(buildingId, 'building');
     if (!bld) return;
 
-    // Validate: completed, accepts workers, has capacity
-    if (!bld.completed || bld.maxWorkers === 0) return;
-    const currentWorkers = bld.assignedWorkers?.length || 0;
-    if (currentWorkers >= bld.maxWorkers) return;
+    // Validate: accepts workers and has capacity (allow incomplete buildings for construction)
+    if (bld.completed) {
+      if (bld.maxWorkers === 0) return;
+      const currentWorkers = bld.assignedWorkers?.length || 0;
+      if (currentWorkers >= bld.maxWorkers) return;
+    }
 
     this.assignWorkerToBuilding(citizenId, buildingId);
     this.state.assigningWorker = null;
@@ -673,8 +817,21 @@ export class Game {
     }
 
     worker.workplaceId = buildingId;
-    worker.profession = this.populationSystem.getProfessionForBuilding(bld.type);
     worker.manuallyAssigned = true;
+
+    // Clear current movement path so worker immediately heads to new workplace
+    const movement = this.world.getComponent<any>(citizenId, 'movement');
+    if (movement) {
+      movement.path = [];
+      movement.targetEntity = null;
+    }
+
+    if (bld.completed) {
+      worker.profession = this.populationSystem.getProfessionForBuilding(bld.type);
+    } else {
+      // Assigning to construction site — worker goes there as a laborer/builder
+      worker.profession = Profession.LABORER;
+    }
 
     if (!bld.assignedWorkers) bld.assignedWorkers = [];
     bld.assignedWorkers.push(citizenId);
@@ -711,6 +868,8 @@ export class Game {
     for (const [id, cit] of citizens) {
       const pos = positions.get(id);
       if (!pos) continue;
+      // Skip citizens who are inside a building (sleeping, working, etc.)
+      if (cit.insideBuildingId != null) continue;
       const need = needs?.get(id);
       const fam = families?.get(id);
       result.push({
@@ -735,12 +894,26 @@ export class Game {
       id: EntityId; x: number; y: number; w: number; h: number;
       category: string; completed: boolean; progress: number; name: string;
       type: string; isValidTarget?: boolean; isFullOrInvalid?: boolean;
-      cropStage?: number;
+      cropStage?: number; doorDef?: DoorDef;
+      occupants?: Array<{ isMale: boolean; isChild: boolean }>;
     }> = [];
     const positions = this.world.getComponentStore<any>('position');
     const buildings = this.world.getComponentStore<any>('building');
 
     if (!positions || !buildings) return result;
+
+    // Pre-compute occupants inside each building
+    const citizenStore = this.world.getComponentStore<any>('citizen');
+    const occupantMap = new Map<EntityId, Array<{ isMale: boolean; isChild: boolean }>>();
+    if (citizenStore) {
+      for (const [, cit] of citizenStore) {
+        if (cit.insideBuildingId != null) {
+          let arr = occupantMap.get(cit.insideBuildingId);
+          if (!arr) { arr = []; occupantMap.set(cit.insideBuildingId, arr); }
+          arr.push({ isMale: cit.isMale, isChild: cit.isChild ?? false });
+        }
+      }
+    }
 
     const assigning = this.state.assigningWorker !== null;
 
@@ -785,6 +958,8 @@ export class Game {
         isValidTarget,
         isFullOrInvalid,
         cropStage,
+        doorDef: bld.doorDef,
+        occupants: occupantMap.get(id),
       });
     }
     return result;

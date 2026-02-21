@@ -14,6 +14,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 250,       // 5 workers → 22h, 2 workers → 2.3d
     residents: 5,
     description: 'A warm wooden house. Shelters up to 5 residents.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.STORAGE_BARN]: {
     type: BuildingType.STORAGE_BARN,
@@ -25,6 +26,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 300,       // 5 workers → 1.1d, 2 workers → 2.8d
     isStorage: true, storageCapacity: 6000,
     description: 'Stores food and goods. Reduces spoilage. Capacity: 6000.',
+    doorDef: { dx: 2, dy: 3, side: 'south' },
   },
   [BuildingType.STOCKPILE]: {
     type: BuildingType.STOCKPILE,
@@ -35,6 +37,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 0, workRadius: 0,
     constructionWork: 15,        // 5 workers → 1.3h (quick to set up)
     isStorage: true, storageCapacity: 5000,
+    blocksMovement: false,
     description: 'Open-air storage for raw materials. Capacity: 5000.',
   },
   [BuildingType.CROP_FIELD]: {
@@ -45,7 +48,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     costLog: 0, costStone: 0, costIron: 0,
     maxWorkers: 4, workRadius: 0,
     constructionWork: 60,        // 5 workers → 5.3h (plowing large area)
-    description: 'Grow crops. Plant in spring, harvest in autumn. 4 workers.',
+    blocksMovement: false,
+    description: 'Grow crops. Plant in spring, harvest in autumn. 4 workers. Drag to resize.',
+    flexible: true, minWidth: 3, minHeight: 3, maxWidth: 16, maxHeight: 16,
   },
   [BuildingType.GATHERING_HUT]: {
     type: BuildingType.GATHERING_HUT,
@@ -57,6 +62,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 150,       // 5 workers → 13h, 2 workers → 1.4d
     requiresForest: true,
     description: 'Gathers berries, mushrooms, and roots from nearby forest. 4 workers.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.HUNTING_CABIN]: {
     type: BuildingType.HUNTING_CABIN,
@@ -67,6 +73,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 3, workRadius: 30,
     constructionWork: 150,       // 5 workers → 13h, 2 workers → 1.4d
     description: 'Hunts deer for venison and leather. 3 workers.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.FISHING_DOCK]: {
     type: BuildingType.FISHING_DOCK,
@@ -78,6 +85,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 180,       // 5 workers → 16h (waterside construction)
     requiresWater: true,
     description: 'Catches fish from nearby water. Must be placed adjacent to water. 4 workers.',
+    doorDef: { dx: 1, dy: 3, side: 'south' },
   },
   [BuildingType.FORESTER_LODGE]: {
     type: BuildingType.FORESTER_LODGE,
@@ -88,6 +96,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 4, workRadius: 30,
     constructionWork: 150,       // 5 workers → 13h
     description: 'Plants and harvests trees for logs. 4 workers.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.WOOD_CUTTER]: {
     type: BuildingType.WOOD_CUTTER,
@@ -98,6 +107,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 100,       // 5 workers → 9h, 1 worker → 1.9d
     description: 'Converts logs into firewood. 1 worker.',
+    doorDef: { dx: 1, dy: 1, side: 'south' },
   },
   [BuildingType.BLACKSMITH]: {
     type: BuildingType.BLACKSMITH,
@@ -108,6 +118,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 350,       // 5 workers → 1.3d, 2 workers → 3.2d
     description: 'Forges tools from iron and logs. 1 worker.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.TAILOR]: {
     type: BuildingType.TAILOR,
@@ -118,6 +129,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 250,       // 5 workers → 22h, 2 workers → 2.3d
     description: 'Makes coats from leather. 1 worker.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.HERBALIST]: {
     type: BuildingType.HERBALIST,
@@ -128,6 +140,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 30,
     constructionWork: 150,       // 5 workers → 13h
     description: 'Gathers herbs to improve citizen health. 1 worker.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.MARKET]: {
     type: BuildingType.MARKET,
@@ -137,6 +150,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     costLog: 60, costStone: 40, costIron: 16,
     maxWorkers: 3, workRadius: 40,
     constructionWork: 500,       // 5 workers → 1.9d, 2 workers → 4.6d
+    blocksMovement: false,
     description: 'Distributes goods to nearby houses. 3 vendors.',
   },
   [BuildingType.SCHOOL]: {
@@ -148,6 +162,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 600,       // 5 workers → 2.2d, 2 workers → 5.6d
     description: 'Educates children. Educated workers produce +50%. 1 teacher.',
+    doorDef: { dx: 2, dy: 3, side: 'south' },
   },
   [BuildingType.TRADING_POST]: {
     type: BuildingType.TRADING_POST,
@@ -159,6 +174,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 600,       // 5 workers → 2.2d, 2 workers → 5.6d
     requiresWater: true,
     description: 'Trade with merchants. Must be placed near water. 2 workers.',
+    doorDef: { dx: 2, dy: 4, side: 'south' },
   },
   [BuildingType.ROAD]: {
     type: BuildingType.ROAD,
@@ -179,6 +195,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 2, workRadius: 0,
     constructionWork: 250,       // 5 workers → 22h
     description: 'Cooks raw ingredients into meals. Cooked food restores more and gives buffs. 2 workers.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.CHICKEN_COOP]: {
     type: BuildingType.CHICKEN_COOP,
@@ -198,7 +215,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     costLog: 16, costStone: 0, costIron: 0,
     maxWorkers: 1, workRadius: 0,
     constructionWork: 80,        // 5 workers → 7h (fencing)
-    description: 'Fenced area for cattle. Produces milk, wool, and leather. Needs hay. 1 herder.',
+    blocksMovement: false,
+    description: 'Fenced area for cattle. Produces milk, wool, and leather. Needs hay. 1 herder. Drag to resize.',
+    flexible: true, minWidth: 3, minHeight: 3, maxWidth: 12, maxHeight: 12,
   },
   [BuildingType.DAIRY]: {
     type: BuildingType.DAIRY,
@@ -209,6 +228,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 200,       // 5 workers → 18h
     description: 'Turns milk into cheese. 1 worker.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.TAVERN]: {
     type: BuildingType.TAVERN,
@@ -219,6 +239,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 1, workRadius: 0,
     constructionWork: 400,       // 5 workers → 1.5d
     description: 'Citizens visit in the evening for socializing and happiness. 1 barkeep.',
+    doorDef: { dx: 2, dy: 3, side: 'south' },
   },
   [BuildingType.WELL]: {
     type: BuildingType.WELL,
@@ -239,6 +260,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 0, workRadius: 0,
     constructionWork: 350,       // 5 workers → 1.3d
     description: 'Weddings happen here. Boosts newlywed happiness and community morale.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
   },
   [BuildingType.TOWN_HALL]: {
     type: BuildingType.TOWN_HALL,
@@ -249,5 +271,6 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 0, workRadius: 0,
     constructionWork: 800,       // 5 workers → 3d (major community building)
     description: 'The heart of the village. Unlocks seasonal festivals that boost morale and grant bonuses.',
+    doorDef: { dx: 2, dy: 4, side: 'south' },
   },
 };

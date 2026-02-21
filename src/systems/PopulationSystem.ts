@@ -1,4 +1,5 @@
 import type { Game } from '../Game';
+import { logger } from '../utils/Logger';
 import {
   TICKS_PER_YEAR, CHILD_AGE, OLD_AGE, TILE_SIZE, Profession, CITIZEN_SPEED,
   BuildingType, MAP_WIDTH, MAP_HEIGHT,
@@ -345,6 +346,8 @@ export class PopulationSystem {
         // Assign to this house
         fam.homeId = houseId;
         house.residents.push(id);
+        const citName = world.getComponent<any>(id, 'citizen')?.name;
+        logger.info('POPULATION', `${citName} (${id}) assigned to house (${houseId}), residents=${house.residents.length}/${house.maxResidents}`);
 
         // Also assign partner
         if (fam.partnerId !== null) {
@@ -366,9 +369,30 @@ export class PopulationSystem {
     const workers = world.getComponentStore<any>('worker');
     if (!buildings || !workers) return;
 
+    // Count construction sites — reserve laborers for building
+    let constructionSites = 0;
+    for (const [, bld] of buildings) {
+      if (!bld.completed && bld.constructionProgress < 1) constructionSites++;
+    }
+
+    // Count idle laborers
+    let idleLaborers = 0;
+    for (const [, worker] of workers) {
+      if (worker.workplaceId === null && worker.profession === Profession.LABORER && !worker.manuallyAssigned) {
+        idleLaborers++;
+      }
+    }
+
+    // Reserve at least 2 laborers per construction site (they'll go build via AI step 7)
+    const reserveForConstruction = Math.min(idleLaborers, constructionSites * 2);
+    let assignableLaborers = idleLaborers - reserveForConstruction;
+
+    if (assignableLaborers <= 0) return;
+
     // Find buildings needing workers
     for (const [bldId, bld] of buildings) {
       if (!bld.completed || bld.maxWorkers === 0) continue;
+      if (assignableLaborers <= 0) break;
 
       const currentWorkers = bld.assignedWorkers?.length || 0;
       if (currentWorkers >= bld.maxWorkers) continue;
@@ -398,6 +422,7 @@ export class PopulationSystem {
 
       for (const candidate of candidates) {
         if ((bld.assignedWorkers?.length || 0) >= bld.maxWorkers) break;
+        if (assignableLaborers <= 0) break;
 
         // Quick reachability check: verify pathfinding can find a route
         const wPos = world.getComponent<any>(candidate.id, 'position');
@@ -407,10 +432,13 @@ export class PopulationSystem {
         if (!pathResult.found) continue; // Skip unreachable buildings
 
         const worker = workers.get(candidate.id)!;
+        const cit = world.getComponent<any>(candidate.id, 'citizen');
         worker.workplaceId = bldId;
         worker.profession = this.getProfessionForBuilding(bld.type);
         if (!bld.assignedWorkers) bld.assignedWorkers = [];
         bld.assignedWorkers.push(candidate.id);
+        assignableLaborers--;
+        logger.info('POPULATION', `Auto-assigned ${cit?.name} (${candidate.id}) to ${bld.type} as ${worker.profession}`);
       }
     }
   }

@@ -3,7 +3,7 @@ import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL } fro
 import { Settings } from '../Settings';
 import { EntityId } from '../types';
 
-const PANEL_HEIGHT = 520;
+const PANEL_HEIGHT = 600;
 const BTN_WIDTH = 120;
 const BTN_HEIGHT = 22;
 
@@ -21,6 +21,7 @@ export class InfoPanel {
   // Button hit-test rects (in UI-scaled coords)
   private assignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
   private unassignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
+  private autoAssignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
 
   // Clickable entity link rects
   private linkRects: LinkRect[] = [];
@@ -42,6 +43,15 @@ export class InfoPanel {
     for (const link of this.linkRects) {
       if (x >= link.x && x <= link.x + link.w && y >= link.y && y <= link.y + link.h) {
         this.selectAndFocus(link.entityId);
+        return true;
+      }
+    }
+
+    // Check [Auto-Assign] button on building panel
+    if (this.autoAssignBtnRect) {
+      const r = this.autoAssignBtnRect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        this.autoAssignRandomWorker(id);
         return true;
       }
     }
@@ -113,6 +123,7 @@ export class InfoPanel {
     // Clear button and link rects each frame
     this.assignBtnRect = null;
     this.unassignBtnRect = null;
+    this.autoAssignBtnRect = null;
     this.linkRects = [];
 
     const world = this.game.world;
@@ -456,6 +467,46 @@ export class InfoPanel {
             textY += 15;
           }
         }
+
+        // [Auto-Assign] button (shown when completed building has capacity)
+        if (building.completed && assigned < building.maxWorkers) {
+          textY += 4;
+          const btnX = leftX;
+          const btnY = textY;
+          this.autoAssignBtnRect = { x: btnX, y: btnY, w: BTN_WIDTH, h: BTN_HEIGHT };
+
+          ctx.strokeStyle = '#44aacc';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+          ctx.fillStyle = 'rgba(30, 60, 80, 0.6)';
+          ctx.fillRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+          ctx.fillStyle = '#88ddff';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText('Auto-Assign', btnX + 6, btnY + 15);
+          textY += BTN_HEIGHT + 4;
+        }
+      }
+
+      // [Auto-Assign] button for buildings under construction (cap at maxWorkers, min 1)
+      if (!building.completed) {
+        const constructionCap = Math.max(building.maxWorkers, 1);
+        const constructionAssigned = building.assignedWorkers?.length || 0;
+        if (constructionAssigned < constructionCap) {
+          textY += 4;
+          const btnX = leftX;
+          const btnY = textY;
+          this.autoAssignBtnRect = { x: btnX, y: btnY, w: BTN_WIDTH, h: BTN_HEIGHT };
+
+          ctx.strokeStyle = '#44aacc';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+          ctx.fillStyle = 'rgba(30, 60, 80, 0.6)';
+          ctx.fillRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+          ctx.fillStyle = '#88ddff';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText('Auto-Assign', btnX + 6, btnY + 15);
+          textY += BTN_HEIGHT + 4;
+        }
       }
 
       // House info
@@ -522,7 +573,89 @@ export class InfoPanel {
           textY += 18;
         }
       }
+
+      // Citizens currently inside this building
+      const allCitizens = world.getComponentStore<any>('citizen');
+      if (allCitizens) {
+        const insideIds: EntityId[] = [];
+        for (const [cId, cit] of allCitizens) {
+          if (cit.insideBuildingId === id) insideIds.push(cId);
+        }
+        if (insideIds.length > 0) {
+          textY += 4;
+          ctx.fillStyle = '#cccccc';
+          ctx.font = 'bold 12px monospace';
+          ctx.fillText(`Inside (${insideIds.length}):`, leftX, textY);
+          textY += 16;
+          for (const cId of insideIds) {
+            const cit = allCitizens.get(cId);
+            if (!cit) continue;
+            ctx.font = '12px monospace';
+            const sleeping = cit.isSleeping;
+            const prefix = sleeping ? '  zzz ' : '  ';
+            ctx.fillStyle = sleeping ? '#8888cc' : '#cccccc';
+            ctx.fillText(prefix, leftX, textY);
+            const prefixW = ctx.measureText(prefix).width;
+            this.drawLink(ctx, cit.name, leftX + prefixW, textY, cId);
+            const nameW = ctx.measureText(cit.name).width;
+            const activity = cit.activity || 'idle';
+            ctx.fillStyle = '#888888';
+            ctx.font = '11px monospace';
+            ctx.fillText(` ${this.activityLabel(activity)}`, leftX + prefixW + nameW, textY);
+            textY += 15;
+          }
+        }
+      }
     }
+  }
+
+  /** Find a worker and assign them to the building. Prefers unassigned workers,
+   *  then auto-assigned workers. Will unassign someone if necessary. */
+  private autoAssignRandomWorker(buildingId: EntityId): void {
+    const world = this.game.world;
+    const bld = world.getComponent<any>(buildingId, 'building');
+    if (!bld) return;
+
+    // Check worker capacity (for construction sites, cap at maxWorkers with min 1)
+    const cap = bld.completed ? bld.maxWorkers : Math.max(bld.maxWorkers, 1);
+    const assigned = bld.assignedWorkers?.length || 0;
+    if (assigned >= cap) return;
+
+    const workers = world.getComponentStore<any>('worker');
+    const citizens = world.getComponentStore<any>('citizen');
+    if (!workers || !citizens) return;
+
+    // Already assigned to this building
+    const alreadyAssigned = new Set<EntityId>(bld.assignedWorkers || []);
+
+    const unassigned: EntityId[] = [];
+    const autoAssigned: EntityId[] = [];
+    const manuallyAssigned: EntityId[] = [];
+
+    for (const [entityId, worker] of workers) {
+      const citizen = citizens.get(entityId);
+      if (!citizen || citizen.isChild) continue;
+      if (alreadyAssigned.has(entityId)) continue;
+
+      if (worker.workplaceId === null) {
+        unassigned.push(entityId);
+      } else if (!worker.manuallyAssigned) {
+        autoAssigned.push(entityId);
+      } else {
+        manuallyAssigned.push(entityId);
+      }
+    }
+
+    // Pick from best available pool: free workers > auto-assigned > manually assigned
+    const pool = unassigned.length > 0 ? unassigned
+      : autoAssigned.length > 0 ? autoAssigned
+      : manuallyAssigned.length > 0 ? manuallyAssigned
+      : null;
+
+    if (!pool) return;
+
+    const idx = Math.floor(Math.random() * pool.length);
+    this.game.assignWorkerToBuilding(pool[idx], buildingId);
   }
 
   private activityLabel(activity: string): string {

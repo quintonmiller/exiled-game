@@ -18,6 +18,7 @@ export class TileMap {
         buildingId: null,
         stoneAmount: 0,
         ironAmount: 0,
+        blocksMovement: false,
       };
     }
   }
@@ -43,7 +44,7 @@ export class TileMap {
   isWalkable(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const tile = this.tiles[this.idx(x, y)];
-    return tile.type !== TileType.WATER && tile.type !== TileType.RIVER;
+    return tile.type !== TileType.WATER && tile.type !== TileType.RIVER && !tile.blocksMovement;
   }
 
   isBuildable(x: number, y: number): boolean {
@@ -196,10 +197,10 @@ export class TileMap {
     return consumed;
   }
 
-  markOccupied(startX: number, startY: number, w: number, h: number, entityId: number): void {
+  markOccupied(startX: number, startY: number, w: number, h: number, entityId: number, blocksMovement: boolean = true): void {
     for (let dy = 0; dy < h; dy++) {
       for (let dx = 0; dx < w; dx++) {
-        this.set(startX + dx, startY + dy, { occupied: true, buildingId: entityId });
+        this.set(startX + dx, startY + dy, { occupied: true, buildingId: entityId, blocksMovement });
       }
     }
   }

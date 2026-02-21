@@ -108,7 +108,7 @@ export class LivestockSystem {
       data.eggTimer += data.animalCount;
       if (data.eggTimer >= CHICKEN_EGG_TICKS) {
         data.eggTimer = 0;
-        this.game.addResource(ResourceType.EGGS, Math.ceil(data.animalCount * 0.5));
+        this.game.addResource(ResourceType.EGGS, Math.ceil(data.animalCount * 0.7));
       }
       data.featherTimer += data.animalCount;
       if (data.featherTimer >= CHICKEN_FEATHER_TICKS) {

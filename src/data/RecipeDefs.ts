@@ -8,8 +8,8 @@ export const RECIPE_DEFS: RecipeDef[] = [
   {
     buildingType: BuildingType.GATHERING_HUT,
     inputs: {},
-    outputs: { [ResourceType.BERRIES]: 3, [ResourceType.MUSHROOMS]: 2, [ResourceType.ROOTS]: 2 },
-    cooldownTicks: 180,  // ~2.4h per trip (was 120)
+    outputs: { [ResourceType.BERRIES]: 5, [ResourceType.MUSHROOMS]: 3, [ResourceType.ROOTS]: 3 },
+    cooldownTicks: 120,  // ~1.6h per trip — foragers cover ground quickly
     seasonalMultiplier: true,
     gatherFromRadius: true,
   },
@@ -17,8 +17,8 @@ export const RECIPE_DEFS: RecipeDef[] = [
   {
     buildingType: BuildingType.HUNTING_CABIN,
     inputs: {},
-    outputs: { [ResourceType.VENISON]: 5, [ResourceType.LEATHER]: 2 },
-    cooldownTicks: 250,  // ~3.3h per expedition (was 150)
+    outputs: { [ResourceType.VENISON]: 8, [ResourceType.LEATHER]: 3 },
+    cooldownTicks: 180,  // ~2.4h per expedition — a deer feeds many mouths
     seasonalMultiplier: true,
     gatherFromRadius: true,
   },
@@ -26,8 +26,8 @@ export const RECIPE_DEFS: RecipeDef[] = [
   {
     buildingType: BuildingType.FISHING_DOCK,
     inputs: {},
-    outputs: { [ResourceType.FISH]: 5 },
-    cooldownTicks: 150,  // ~2h per fishing trip (was 100)
+    outputs: { [ResourceType.FISH]: 8 },
+    cooldownTicks: 100,  // ~1.3h per fishing trip — nets bring consistent hauls
   },
   // Forester Lodge: fell and haul trees
   {

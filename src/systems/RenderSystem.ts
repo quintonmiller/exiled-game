@@ -1,7 +1,7 @@
 import { Camera } from '../map/Camera';
 import { TileMap } from '../map/TileMap';
 import { TileType, TILE_SIZE, HUD_HEIGHT, TICKS_PER_SUB_SEASON, TICKS_PER_YEAR, DAYS_PER_YEAR, CropStage } from '../constants';
-import { GameState, EntityId, FestivalType } from '../types';
+import { GameState, EntityId, FestivalType, DoorDef } from '../types';
 import { Settings } from '../Settings';
 
 // Tile colors
@@ -68,9 +68,10 @@ export class RenderSystem {
         id: EntityId; x: number; y: number; w: number; h: number;
         category: string; completed: boolean; progress: number; name: string;
         type?: string; isValidTarget?: boolean; isFullOrInvalid?: boolean;
-        cropStage?: number;
+        cropStage?: number; doorDef?: DoorDef;
+        occupants?: Array<{ isMale: boolean; isChild: boolean }>;
       }>;
-      ghosts?: Array<{ x: number; y: number; w: number; h: number; valid: boolean }>;
+      ghosts?: Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef }>;
       drawParticles?: (ctx: CanvasRenderingContext2D) => void;
       selectedPath?: Array<{ x: number; y: number }>;
     },
@@ -104,6 +105,9 @@ export class RenderSystem {
         ctx.strokeStyle = g.valid ? '#00ff00' : '#ff0000';
         ctx.lineWidth = 2;
         ctx.strokeRect(g.x * TILE_SIZE, g.y * TILE_SIZE, g.w * TILE_SIZE, g.h * TILE_SIZE);
+        if (g.doorDef) {
+          this.drawDoor(ctx, g.x, g.y, g.doorDef, g.valid ? '#33aa33' : '#aa3333');
+        }
         ctx.globalAlpha = 1;
       }
     }
@@ -242,7 +246,7 @@ export class RenderSystem {
 
   private drawBuilding(
     ctx: CanvasRenderingContext2D,
-    b: { x: number; y: number; w: number; h: number; category: string; completed: boolean; progress: number; name: string; isValidTarget?: boolean; isFullOrInvalid?: boolean; type?: string; cropStage?: number },
+    b: { x: number; y: number; w: number; h: number; category: string; completed: boolean; progress: number; name: string; isValidTarget?: boolean; isFullOrInvalid?: boolean; type?: string; cropStage?: number; doorDef?: DoorDef; occupants?: Array<{ isMale: boolean; isChild: boolean }> },
   ): void {
     const px = b.x * TILE_SIZE;
     const py = b.y * TILE_SIZE;
@@ -261,6 +265,14 @@ export class RenderSystem {
         ctx.strokeStyle = '#333';
         ctx.lineWidth = 1;
         ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+      }
+      // Draw door on completed buildings
+      if (b.doorDef) {
+        this.drawDoor(ctx, b.x, b.y, b.doorDef, '#5c3a1a');
+      }
+      // Draw occupant indicators inside the building
+      if (b.occupants && b.occupants.length > 0) {
+        this.drawOccupants(ctx, px, py, pw, ph, b.occupants);
       }
     } else {
       // Under construction - show progress
@@ -283,6 +295,78 @@ export class RenderSystem {
     } else if (b.isFullOrInvalid) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.fillRect(px + 1, py + 1, pw - 2, ph - 2);
+    }
+  }
+
+  /** Draw semi-transparent citizen dots and a count badge inside a building */
+  private drawOccupants(
+    ctx: CanvasRenderingContext2D,
+    px: number, py: number, pw: number, ph: number,
+    occupants: Array<{ isMale: boolean; isChild: boolean }>,
+  ): void {
+    const count = occupants.length;
+
+    // Arrange dots in a grid inside the building
+    const cols = Math.min(count, Math.max(1, Math.floor((pw - 6) / 10)));
+    const rows = Math.ceil(count / cols);
+    const spacingX = Math.min(10, (pw - 6) / cols);
+    const spacingY = Math.min(10, (ph - 6) / rows);
+    const startX = px + pw / 2 - ((cols - 1) * spacingX) / 2;
+    const startY = py + ph / 2 - ((rows - 1) * spacingY) / 2;
+
+    ctx.globalAlpha = 0.55;
+    for (let i = 0; i < count; i++) {
+      const occ = occupants[i];
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const dotX = startX + col * spacingX;
+      const dotY = startY + row * spacingY;
+      const r = occ.isChild ? 2 : 3;
+
+      ctx.fillStyle = occ.isMale ? '#4488cc' : '#cc4488';
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Count badge at top-right corner
+    const badgeX = px + pw - 2;
+    const badgeY = py + 2;
+    const badgeR = count >= 10 ? 8 : 7;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.beginPath();
+    ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(count), badgeX, badgeY);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  private drawDoor(ctx: CanvasRenderingContext2D, bx: number, by: number, door: DoorDef, color: string): void {
+    const doorX = (bx + door.dx) * TILE_SIZE;
+    const doorY = (by + door.dy) * TILE_SIZE;
+    const doorW = 8;
+    const doorH = 4;
+
+    ctx.fillStyle = color;
+    switch (door.side) {
+      case 'south':
+        ctx.fillRect(doorX + (TILE_SIZE - doorW) / 2, doorY + TILE_SIZE - doorH, doorW, doorH);
+        break;
+      case 'north':
+        ctx.fillRect(doorX + (TILE_SIZE - doorW) / 2, doorY, doorW, doorH);
+        break;
+      case 'east':
+        ctx.fillRect(doorX + TILE_SIZE - doorH, doorY + (TILE_SIZE - doorW) / 2, doorH, doorW);
+        break;
+      case 'west':
+        ctx.fillRect(doorX, doorY + (TILE_SIZE - doorW) / 2, doorH, doorW);
+        break;
     }
   }
 

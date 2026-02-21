@@ -81,6 +81,22 @@ export class ConstructionSystem {
           id, name: bld.name, tileX: bPos.tileX, tileY: bPos.tileY,
         });
 
+        // Transition construction workers: keep up to maxWorkers, unassign the rest
+        if (bld.assignedWorkers && bld.assignedWorkers.length > 0) {
+          const keep = bld.assignedWorkers.slice(0, bld.maxWorkers || 0);
+          const excess = bld.assignedWorkers.slice(bld.maxWorkers || 0);
+          bld.assignedWorkers = keep;
+          for (const wId of keep) {
+            const worker = this.game.world.getComponent<any>(wId, 'worker');
+            if (worker) {
+              worker.profession = this.game.populationSystem.getProfessionForBuilding(bld.type);
+            }
+          }
+          for (const wId of excess) {
+            this.game.unassignWorker(wId);
+          }
+        }
+
         // Add producer component if this building produces resources
         this.initCompletedBuilding(id, bld);
       }
