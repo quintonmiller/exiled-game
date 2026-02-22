@@ -240,6 +240,66 @@ export class RenderSystem {
           ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 3 + 4 * ironRatio, 0, Math.PI * 2);
           ctx.fill();
         }
+
+        // Berry bushes — small red/purple dots
+        if (tile.berries > 0) {
+          const count = Math.min(tile.berries, 3);
+          for (let i = 0; i < count; i++) {
+            ctx.fillStyle = i % 2 === 0 ? '#cc3344' : '#8833aa';
+            const bx = px + 6 + i * 8;
+            const by = py + TILE_SIZE - 7;
+            ctx.beginPath();
+            ctx.arc(bx, by, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Mushroom patches — small brown semicircles
+        if (tile.mushrooms > 0) {
+          const count = Math.min(tile.mushrooms, 2);
+          for (let i = 0; i < count; i++) {
+            ctx.fillStyle = '#8B6914';
+            const mx = px + 4 + i * 12;
+            const my = py + 6;
+            ctx.beginPath();
+            ctx.arc(mx, my, 3, Math.PI, 0);
+            ctx.fill();
+            // Stem
+            ctx.fillStyle = '#d4c5a0';
+            ctx.fillRect(mx - 1, my, 2, 3);
+          }
+        }
+
+        // Herb plants — small green + marks
+        if (tile.herbs > 0) {
+          const count = Math.min(tile.herbs, 2);
+          ctx.strokeStyle = '#33cc55';
+          ctx.lineWidth = 1.5;
+          for (let i = 0; i < count; i++) {
+            const hx = px + TILE_SIZE - 8 - i * 10;
+            const hy = py + TILE_SIZE - 8;
+            ctx.beginPath();
+            ctx.moveTo(hx - 3, hy);
+            ctx.lineTo(hx + 3, hy);
+            ctx.moveTo(hx, hy - 3);
+            ctx.lineTo(hx, hy + 3);
+            ctx.stroke();
+          }
+        }
+
+        // Fish — subtle animated blue dots on water/river
+        if (tile.fish > 0 && (tile.type === TileType.WATER || tile.type === TileType.RIVER)) {
+          const count = Math.min(Math.ceil(tile.fish / 3), 3);
+          ctx.fillStyle = 'rgba(120, 200, 255, 0.6)';
+          for (let i = 0; i < count; i++) {
+            // Simple shimmer using tile position as seed for offset variation
+            const fx = px + 5 + ((x * 7 + i * 11) % 22);
+            const fy = py + 5 + ((y * 13 + i * 7) % 22);
+            ctx.beginPath();
+            ctx.arc(fx, fy, 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
       }
     }
   }
@@ -395,6 +455,7 @@ export class RenderSystem {
     serving:     { symbol: 'B',  color: '#cc8844' },
     herding:     { symbol: 'H',  color: '#88aa44' },
     dairying:    { symbol: 'D',  color: '#eeddaa' },
+    returning:   { symbol: 'R',  color: '#ddaa44' },
   };
 
   private drawCitizen(
@@ -582,7 +643,7 @@ export class RenderSystem {
     ctx.restore();
   }
 
-  drawHUD(state: GameState, resources?: Map<string, number>, weather?: string): void {
+  drawHUD(state: GameState, resources?: Map<string, number>, weather?: string, storageUsed?: number, storageCap?: number): void {
     const ctx = this.ctx;
     const s = Settings.get('uiScale');
 
@@ -681,6 +742,19 @@ export class RenderSystem {
         const val = Math.floor(resources.get(keys[i]) || 0);
         ctx.fillText(`${labels[i]}:${val}`, x, y);
         x += 65;
+      }
+
+      // Storage capacity indicator
+      if (storageUsed !== undefined && storageCap !== undefined) {
+        const ratio = storageCap > 0 ? storageUsed / storageCap : 1;
+        if (ratio >= 1) {
+          ctx.fillStyle = '#ff4444';
+        } else if (ratio > 0.8) {
+          ctx.fillStyle = '#ddaa22';
+        } else {
+          ctx.fillStyle = '#ffffff';
+        }
+        ctx.fillText(`Sto:${Math.floor(storageUsed)}/${storageCap}`, x, y);
       }
     }
 

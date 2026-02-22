@@ -103,28 +103,37 @@ export class LivestockSystem {
     // No production without a herder
     if (workerCount === 0) return;
 
-    // Production
+    // Production (skip if storage is full)
+    const storageFull = this.game.isStorageFull();
     if (animalType === 'chicken') {
       data.eggTimer += data.animalCount;
       if (data.eggTimer >= CHICKEN_EGG_TICKS) {
-        data.eggTimer = 0;
-        this.game.addResource(ResourceType.EGGS, Math.ceil(data.animalCount * 0.7));
+        if (storageFull) { data.eggTimer = CHICKEN_EGG_TICKS; } else {
+          data.eggTimer = 0;
+          this.game.addResource(ResourceType.EGGS, Math.ceil(data.animalCount * 0.7));
+        }
       }
       data.featherTimer += data.animalCount;
       if (data.featherTimer >= CHICKEN_FEATHER_TICKS) {
-        data.featherTimer = 0;
-        this.game.addResource(ResourceType.FEATHERS, Math.ceil(data.animalCount * 0.3));
+        if (storageFull) { data.featherTimer = CHICKEN_FEATHER_TICKS; } else {
+          data.featherTimer = 0;
+          this.game.addResource(ResourceType.FEATHERS, Math.ceil(data.animalCount * 0.3));
+        }
       }
     } else {
       data.milkTimer += data.animalCount;
       if (data.milkTimer >= CATTLE_MILK_TICKS) {
-        data.milkTimer = 0;
-        this.game.addResource(ResourceType.MILK, data.animalCount);
+        if (storageFull) { data.milkTimer = CATTLE_MILK_TICKS; } else {
+          data.milkTimer = 0;
+          this.game.addResource(ResourceType.MILK, data.animalCount);
+        }
       }
       data.woolTimer += data.animalCount;
       if (data.woolTimer >= CATTLE_WOOL_TICKS) {
-        data.woolTimer = 0;
-        this.game.addResource(ResourceType.WOOL, Math.ceil(data.animalCount * 0.5));
+        if (storageFull) { data.woolTimer = CATTLE_WOOL_TICKS; } else {
+          data.woolTimer = 0;
+          this.game.addResource(ResourceType.WOOL, Math.ceil(data.animalCount * 0.5));
+        }
       }
     }
 

@@ -448,6 +448,24 @@ export class InfoPanel {
         textY += 18;
       }
 
+      // Storage capacity (for storage buildings)
+      if (building.isStorage && building.storageCapacity) {
+        const used = this.game.getStorageUsed();
+        const cap = this.game.getStorageCapacity();
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '12px monospace';
+        ctx.fillText(`Bldg Capacity: ${building.storageCapacity}`, leftX, textY);
+        textY += 16;
+        const fillPct = cap > 0 ? Math.min(100, (used / cap) * 100) : 100;
+        const fillColor = fillPct >= 100 ? '#ff4444' : fillPct > 80 ? '#ddaa22' : '#44aa44';
+        this.drawBar(ctx, leftX, textY, w - 20, 'Fill', fillPct, fillColor);
+        textY += 18;
+        ctx.fillStyle = '#888888';
+        ctx.font = '10px monospace';
+        ctx.fillText(`Global: ${Math.floor(used)} / ${cap}`, leftX, textY);
+        textY += 16;
+      }
+
       if (building.maxWorkers > 0) {
         const assigned = building.assignedWorkers?.length || 0;
         ctx.fillStyle = '#aaaaaa';

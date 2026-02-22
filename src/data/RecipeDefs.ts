@@ -22,20 +22,13 @@ export const RECIPE_DEFS: RecipeDef[] = [
     seasonalMultiplier: true,
     gatherFromRadius: true,
   },
-  // Fishing Dock: fishing trip
+  // Fishing Dock: fishing trip (seasonal — reduced in winter, ice fishing)
   {
     buildingType: BuildingType.FISHING_DOCK,
     inputs: {},
     outputs: { [ResourceType.FISH]: 8 },
     cooldownTicks: 100,  // ~1.3h per fishing trip — nets bring consistent hauls
-  },
-  // Forester Lodge: fell and haul trees
-  {
-    buildingType: BuildingType.FORESTER_LODGE,
-    inputs: {},
-    outputs: { [ResourceType.LOG]: 4 },
-    cooldownTicks: 180,  // ~2.4h per cycle (was 120), +1 log output
-    gatherFromRadius: true,
+    seasonalMultiplier: true,
   },
   // Wood Cutter: split logs into firewood
   {
@@ -58,12 +51,13 @@ export const RECIPE_DEFS: RecipeDef[] = [
     outputs: { [ResourceType.COAT]: 1 },
     cooldownTicks: 300,  // ~4h per coat (was 200)
   },
-  // Herbalist: gather medicinal herbs
+  // Herbalist: gather medicinal herbs (seasonal — peaks late spring, dormant in winter)
   {
     buildingType: BuildingType.HERBALIST,
     inputs: {},
     outputs: { [ResourceType.HERBS]: 2 },
     cooldownTicks: 200,  // ~2.7h per gathering (was 150)
+    seasonalMultiplier: true,
     gatherFromRadius: true,
   },
   // Crop Field: tend and harvest crops (heavily seasonal)

@@ -7,6 +7,9 @@ import {
   WATER_ELEVATION_THRESHOLD, FOREST_ELEVATION_MIN, FERTILE_MOISTURE_THRESHOLD,
   STONE_ELEVATION_THRESHOLD, START_AREA_RADIUS, RIVER_START_POSITION,
   RIVER_START_OFFSET, START_LOCATION_SEARCH_RADIUS,
+  BERRY_FOREST_CHANCE, BERRY_FERTILE_CHANCE, MUSHROOM_FOREST_CHANCE,
+  HERB_CHANCE, HERB_MIN_MOISTURE, FISH_WATER_CHANCE,
+  WILDLIFE_FOREST_CHANCE, WILDLIFE_GRASS_CHANCE,
 } from '../constants';
 
 /** Simple 2D noise using value noise with interpolation */
@@ -130,6 +133,9 @@ export class MapGenerator {
       }
     }
 
+    // Scatter harvestable resources on tiles
+    this.scatterResources(tileMap, rng);
+
     // Clear starting area
     const cx = Math.floor(w / 2);
     const cy = Math.floor(h / 2);
@@ -137,7 +143,51 @@ export class MapGenerator {
       for (let dx = -START_AREA_RADIUS; dx <= START_AREA_RADIUS; dx++) {
         const tile = tileMap.get(cx + dx, cy + dy);
         if (tile && tile.type !== TileType.WATER && tile.type !== TileType.RIVER) {
-          tileMap.set(cx + dx, cy + dy, { type: TileType.GRASS, trees: 0, fertility: 0.5 });
+          tileMap.set(cx + dx, cy + dy, {
+            type: TileType.GRASS, trees: 0, fertility: 0.5,
+            berries: 0, mushrooms: 0, herbs: 0, fish: 0, wildlife: 0,
+          });
+        }
+      }
+    }
+  }
+
+  private scatterResources(tileMap: TileMap, rng: Random): void {
+    const w = tileMap.width;
+    const h = tileMap.height;
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const tile = tileMap.get(x, y)!;
+
+        // Berries: FOREST (40%) and FERTILE near forest (20%)
+        if (tile.type === TileType.FOREST && rng.chance(BERRY_FOREST_CHANCE)) {
+          tile.berries = rng.int(1, 4);
+        } else if (tile.type === TileType.FERTILE && rng.chance(BERRY_FERTILE_CHANCE)) {
+          tile.berries = rng.int(1, 3);
+        }
+
+        // Mushrooms: FOREST only (30%)
+        if (tile.type === TileType.FOREST && rng.chance(MUSHROOM_FOREST_CHANCE)) {
+          tile.mushrooms = rng.int(1, 3);
+        }
+
+        // Herbs: FOREST/GRASS/FERTILE with moisture > threshold (15%)
+        if ((tile.type === TileType.FOREST || tile.type === TileType.GRASS || tile.type === TileType.FERTILE)
+            && tile.fertility > HERB_MIN_MOISTURE && rng.chance(HERB_CHANCE)) {
+          tile.herbs = rng.int(1, 2);
+        }
+
+        // Fish: WATER/RIVER (80%)
+        if ((tile.type === TileType.WATER || tile.type === TileType.RIVER) && rng.chance(FISH_WATER_CHANCE)) {
+          tile.fish = rng.int(3, 8);
+        }
+
+        // Wildlife: FOREST (25%) and GRASS near forest (10%)
+        if (tile.type === TileType.FOREST && rng.chance(WILDLIFE_FOREST_CHANCE)) {
+          tile.wildlife = rng.int(1, 2);
+        } else if (tile.type === TileType.GRASS && rng.chance(WILDLIFE_GRASS_CHANCE)) {
+          tile.wildlife = rng.int(1, 2);
         }
       }
     }

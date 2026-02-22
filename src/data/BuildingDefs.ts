@@ -81,7 +81,7 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     category: BuildingCategory.FOOD,
     width: 3, height: 4,
     costLog: 30, costStone: 16, costIron: 0,
-    maxWorkers: 4, workRadius: 0,
+    maxWorkers: 4, workRadius: 15,
     constructionWork: 180,       // 5 workers → 16h (waterside construction)
     requiresWater: true,
     description: 'Catches fish from nearby water. Must be placed adjacent to water. 4 workers.',

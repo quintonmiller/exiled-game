@@ -1,5 +1,5 @@
 import { TileMap } from './TileMap';
-import { PATH_CACHE_SIZE } from '../constants';
+import { PATH_CACHE_SIZE, ROAD_PATH_COST } from '../constants';
 
 interface PathNode {
   x: number;
@@ -111,9 +111,11 @@ export class Pathfinder {
     const closed = new Set<number>();
     const mapW = this.tileMap.width;
 
+    // Heuristic must be scaled by minimum tile cost (roads) to stay admissible
+    const minCost = ROAD_PATH_COST;
     const startNode: PathNode = {
       x: sx, y: sy, g: 0,
-      h: Math.abs(ex - sx) + Math.abs(ey - sy),
+      h: (Math.abs(ex - sx) + Math.abs(ey - sy)) * minCost,
       f: 0, parent: null,
     };
     startNode.f = startNode.h;
@@ -168,7 +170,7 @@ export class Pathfinder {
         if (prevG !== undefined && g >= prevG) continue;
 
         gScores.set(nKey, g);
-        const h = Math.abs(ex - nx) + Math.abs(ey - ny);
+        const h = (Math.abs(ex - nx) + Math.abs(ey - ny)) * minCost;
         open.push({ x: nx, y: ny, g, h, f: g + h, parent: current });
       }
     }

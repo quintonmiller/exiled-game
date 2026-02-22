@@ -3,7 +3,10 @@ import {
   TileType, NATURAL_REGROWTH_CHANCE, MAP_WIDTH, MAP_HEIGHT,
   BUILDING_DECAY_PER_TICK, BUILDING_MAX_DURABILITY,
   ENVIRONMENT_TILES_PER_TICK, MAX_TREE_DENSITY, FOREST_GROWTH_CHANCE,
-  BUILDING_DECAY_CHECK_INTERVAL, Profession,
+  BUILDING_DECAY_CHECK_INTERVAL, Profession, Season,
+  MAX_BERRIES, MAX_MUSHROOMS, MAX_HERBS, MAX_FISH, MAX_WILDLIFE,
+  BERRY_REGROWTH_CHANCE, MUSHROOM_REGROWTH_CHANCE, HERB_REGROWTH_CHANCE,
+  FISH_REGROWTH_CHANCE, WILDLIFE_REGROWTH_CHANCE,
 } from '../constants';
 
 /**
@@ -48,6 +51,51 @@ export class EnvironmentSystem {
       if (tile.type === TileType.FOREST && tile.trees < MAX_TREE_DENSITY) {
         if (Math.random() < FOREST_GROWTH_CHANCE) {
           tile.trees = Math.min(MAX_TREE_DENSITY, tile.trees + 1);
+        }
+      }
+
+      // ── Map resource regrowth ──
+      const subSeason = this.game.state.subSeason;
+      const isSpring = subSeason >= Season.EARLY_SPRING && subSeason <= Season.LATE_SPRING;
+      const isSummer = subSeason >= Season.EARLY_SUMMER && subSeason <= Season.LATE_SUMMER;
+      const isAutumn = subSeason >= Season.EARLY_AUTUMN && subSeason <= Season.LATE_AUTUMN;
+      const isWinter = subSeason >= Season.EARLY_WINTER && subSeason <= Season.LATE_WINTER;
+
+      // Berry regrowth: spring/summer on FOREST/FERTILE tiles
+      if ((isSpring || isSummer) && tile.berries < MAX_BERRIES
+          && (tile.type === TileType.FOREST || tile.type === TileType.FERTILE)
+          && Math.random() < BERRY_REGROWTH_CHANCE) {
+        tile.berries++;
+      }
+
+      // Mushroom regrowth: peaks autumn, small chance spring/summer on FOREST tiles
+      if (tile.type === TileType.FOREST && tile.mushrooms < MAX_MUSHROOMS) {
+        const chance = isAutumn ? MUSHROOM_REGROWTH_CHANCE * 3 : (isWinter ? 0 : MUSHROOM_REGROWTH_CHANCE);
+        if (chance > 0 && Math.random() < chance) {
+          tile.mushrooms++;
+        }
+      }
+
+      // Herb regrowth: spring/summer on FOREST/GRASS/FERTILE tiles
+      if ((isSpring || isSummer) && tile.herbs < MAX_HERBS
+          && (tile.type === TileType.FOREST || tile.type === TileType.GRASS || tile.type === TileType.FERTILE)
+          && Math.random() < HERB_REGROWTH_CHANCE) {
+        tile.herbs++;
+      }
+
+      // Fish regeneration: year-round on WATER/RIVER tiles, slower in winter
+      if ((tile.type === TileType.WATER || tile.type === TileType.RIVER) && tile.fish < MAX_FISH) {
+        const fishChance = isWinter ? FISH_REGROWTH_CHANCE * 0.3 : FISH_REGROWTH_CHANCE;
+        if (Math.random() < fishChance) {
+          tile.fish++;
+        }
+      }
+
+      // Wildlife regeneration: year-round on FOREST/GRASS tiles
+      if ((tile.type === TileType.FOREST || tile.type === TileType.GRASS) && tile.wildlife < MAX_WILDLIFE) {
+        const wildlifeChance = isWinter ? WILDLIFE_REGROWTH_CHANCE * 0.5 : WILDLIFE_REGROWTH_CHANCE;
+        if (Math.random() < wildlifeChance) {
+          tile.wildlife++;
         }
       }
     }

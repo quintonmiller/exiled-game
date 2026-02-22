@@ -1,4 +1,8 @@
-import { MAP_WIDTH, MAP_HEIGHT, TileType, ROAD_PATH_COST, FOREST_PATH_COST, DEFAULT_PATH_COST, ROAD_SPEED_MULT, FOREST_SPEED_MULT, DEFAULT_SPEED_MULT, TREE_CONSUME_AMOUNT } from '../constants';
+import {
+  MAP_WIDTH, MAP_HEIGHT, TileType, ROAD_PATH_COST, FOREST_PATH_COST, DEFAULT_PATH_COST,
+  ROAD_SPEED_MULT, FOREST_SPEED_MULT, DEFAULT_SPEED_MULT, TREE_CONSUME_AMOUNT,
+  MAX_BERRIES, MAX_MUSHROOMS, MAX_HERBS, MAX_FISH, MAX_WILDLIFE,
+} from '../constants';
 import { TileData } from '../types';
 
 export class TileMap {
@@ -19,6 +23,11 @@ export class TileMap {
         stoneAmount: 0,
         ironAmount: 0,
         blocksMovement: false,
+        berries: 0,
+        mushrooms: 0,
+        herbs: 0,
+        fish: 0,
+        wildlife: 0,
       };
     }
   }
@@ -194,6 +203,51 @@ export class TileMap {
       tile.type = TileType.GRASS;
       tile.ironAmount = 0;
     }
+    return consumed;
+  }
+
+  /** Sum a resource amount across all tiles in radius */
+  countResourceInRadius(cx: number, cy: number, radius: number, resourceType: 'berries' | 'mushrooms' | 'herbs' | 'fish' | 'wildlife'): number {
+    let total = 0;
+    const r2 = radius * radius;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const tile = this.get(cx + dx, cy + dy);
+        if (tile) total += tile[resourceType];
+      }
+    }
+    return total;
+  }
+
+  /** Deplete a resource from tiles in radius. Returns actual amount consumed. */
+  consumeResourceInRadius(cx: number, cy: number, radius: number, resourceType: 'berries' | 'mushrooms' | 'herbs' | 'fish' | 'wildlife', amount: number): number {
+    const r2 = radius * radius;
+    const candidates: { x: number; y: number; val: number }[] = [];
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const tx = cx + dx;
+        const ty = cy + dy;
+        const tile = this.get(tx, ty);
+        if (tile && tile[resourceType] > 0) {
+          candidates.push({ x: tx, y: ty, val: tile[resourceType] });
+        }
+      }
+    }
+
+    if (candidates.length === 0) return 0;
+
+    // Pick a random tile with the resource
+    const target = candidates[Math.floor(Math.random() * candidates.length)];
+    const tile = this.get(target.x, target.y)!;
+    const consumed = Math.min(tile[resourceType], amount);
+    tile[resourceType] -= consumed;
+
+    const maxes: Record<string, number> = { berries: MAX_BERRIES, mushrooms: MAX_MUSHROOMS, herbs: MAX_HERBS, fish: MAX_FISH, wildlife: MAX_WILDLIFE };
+    tile[resourceType] = Math.max(0, Math.min(maxes[resourceType], tile[resourceType]));
+
     return consumed;
   }
 

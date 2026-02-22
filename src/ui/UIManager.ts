@@ -2,6 +2,7 @@ import type { Game } from '../Game';
 import {
   HUD_HEIGHT, BUILD_MENU_HEIGHT, INFO_PANEL_WIDTH, MINIMAP_SIZE,
   EVENT_LOG_VISIBLE_ROWS, EVENT_LOG_ROW_HEIGHT, EVENT_LOG_HEADER_HEIGHT,
+  TileType,
 } from '../constants';
 import { BuildMenu } from './BuildMenu';
 import { InfoPanel } from './InfoPanel';
@@ -18,6 +19,7 @@ export class UIManager {
   private eventLog: EventLog;
   buildMenuOpen = false;
   debugOverlay = false;
+  debugTile: { x: number; y: number } | null = null;
   private notifications: Array<{ text: string; time: number; color: string }> = [];
 
   constructor(game: Game) {
@@ -355,6 +357,32 @@ export class UIManager {
     lines.push('Resources:');
     for (const [key, val] of this.game.globalResources) {
       if (val > 0) lines.push(`  ${key}: ${Math.floor(val)}`);
+    }
+
+    // Clicked tile info
+    if (this.debugTile) {
+      const tile = this.game.tileMap.get(this.debugTile.x, this.debugTile.y);
+      lines.push('');
+      lines.push(`Tile (${this.debugTile.x}, ${this.debugTile.y}):`);
+      if (tile) {
+        const typeName = Object.entries(TileType).find(([, v]) => v === tile.type)?.[0] || String(tile.type);
+        lines.push(`  type: ${typeName}`);
+        lines.push(`  elevation: ${(tile.elevation ?? 0).toFixed(2)}`);
+        lines.push(`  fertility: ${(tile.fertility ?? 0).toFixed(2)}`);
+        if (tile.trees > 0) lines.push(`  trees: ${tile.trees}`);
+        if (tile.stoneAmount > 0) lines.push(`  stone: ${tile.stoneAmount}`);
+        if (tile.ironAmount > 0) lines.push(`  iron: ${tile.ironAmount}`);
+        if (tile.berries > 0) lines.push(`  berries: ${tile.berries}`);
+        if (tile.mushrooms > 0) lines.push(`  mushrooms: ${tile.mushrooms}`);
+        if (tile.herbs > 0) lines.push(`  herbs: ${tile.herbs}`);
+        if (tile.fish > 0) lines.push(`  fish: ${tile.fish}`);
+        if (tile.wildlife > 0) lines.push(`  wildlife: ${tile.wildlife}`);
+        if (tile.occupied) lines.push(`  occupied: true`);
+        if (tile.buildingId) lines.push(`  buildingId: ${tile.buildingId}`);
+        if (tile.blocksMovement) lines.push(`  blocksMovement: true`);
+      } else {
+        lines.push('  (out of bounds)');
+      }
     }
 
     const lineHeight = 14;

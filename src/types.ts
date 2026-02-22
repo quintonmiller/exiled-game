@@ -16,6 +16,12 @@ export interface TileData {
   stoneAmount: number;     // 0-50+ resource remaining in stone deposit
   ironAmount: number;      // 0-30+ resource remaining in iron deposit
   blocksMovement: boolean; // does the building on this tile block NPC pathfinding
+  // Harvestable map resources (depletable, regrowing)
+  berries: number;         // 0-5 berry bushes
+  mushrooms: number;       // 0-3 mushroom patches
+  herbs: number;           // 0-3 herb plants
+  fish: number;            // 0-8 fish population
+  wildlife: number;        // 0-3 wildlife density
 }
 
 export interface BuildingDef {
@@ -59,6 +65,9 @@ export interface SeasonData {
   temperature: number;
   cropGrowth: number;
   gatheringRate: number;
+  huntingRate: number;
+  fishingRate: number;
+  herbRate: number;
   snow: boolean;
   dayLength: number; // 0-1 multiplier
 }

@@ -50,8 +50,8 @@ export interface SaveData {
   globalResources: [string, number][];
   rngState: number;
 
-  // Map tiles — compact tuple: [type, trees, fertility, elevation, occupied(0|1), buildingId, stone, iron, blocksMovement?(0|1)]
-  tiles: Array<[number, number, number, number, number, number | null, number, number, number?]>;
+  // Map tiles — compact tuple: [type, trees, fertility, elevation, occupied(0|1), buildingId, stone, iron, blocksMovement?(0|1), berries?, mushrooms?, herbs?, fish?, wildlife?]
+  tiles: Array<[number, number, number, number, number, number | null, number, number, ...number[]]>;
 
   // ECS world
   world: SerializedWorld;

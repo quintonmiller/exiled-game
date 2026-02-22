@@ -10,7 +10,7 @@ import { RenderSystem } from './systems/RenderSystem';
 import { World } from './ecs/World';
 import { Pathfinder } from './map/Pathfinder';
 import { MovementSystem } from './systems/MovementSystem';
-import { CitizenAISystem } from './systems/CitizenAISystem';
+import { CitizenAISystem } from './systems/citizen-ai/CitizenAISystem';
 import { ConstructionSystem } from './systems/ConstructionSystem';
 import { ProductionSystem } from './systems/ProductionSystem';
 import { NeedsSystem } from './systems/NeedsSystem';
@@ -36,6 +36,7 @@ import {
   STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES, ALL_FOOD_TYPES, COOKED_FOOD_TYPES,
   COOKED_MEAL_RESTORE, COOKED_MEAL_COST, ALL_TRAITS, MAX_TRAITS_PER_CITIZEN, PersonalityTrait,
   SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET, INITIAL_HOUSE_WARMTH,
+  BASE_STORAGE_CAPACITY, STORAGE_FULL_LOG_INTERVAL,
 } from './constants';
 
 export class Game {
@@ -284,6 +285,11 @@ export class Game {
       tile.stoneAmount = t[6];
       tile.ironAmount = t[7];
       tile.blocksMovement = !!(t as any)[8];
+      tile.berries = (t as any)[9] || 0;
+      tile.mushrooms = (t as any)[10] || 0;
+      tile.herbs = (t as any)[11] || 0;
+      tile.fish = (t as any)[12] || 0;
+      tile.wildlife = (t as any)[13] || 0;
     }
 
     // Restore ECS world
@@ -429,7 +435,7 @@ export class Game {
     // Draw UI on top
     const ctx = this.canvas.getContext('2d')!;
     this.uiManager.draw(ctx);
-    this.renderSystem.drawHUD(this.state, this.globalResources, this.weatherSystem.currentWeather);
+    this.renderSystem.drawHUD(this.state, this.globalResources, this.weatherSystem.currentWeather, this.getStorageUsed(), this.getStorageCapacity());
 
     // Post-render hook (pause menu overlay)
     if (this.postRenderHook) {
@@ -744,6 +750,9 @@ export class Game {
   private selectEntityAt(screenX: number, screenY: number): void {
     const tile = this.camera.screenToTile(screenX, screenY);
 
+    // Record clicked tile for debug overlay
+    this.uiManager.debugTile = { x: tile.x, y: tile.y };
+
     // Check citizens first
     const positions = this.world.getComponentStore<any>('position');
     const citizens = this.world.getComponentStore<any>('citizen');
@@ -850,6 +859,14 @@ export class Game {
     worker.workplaceId = null;
     worker.profession = Profession.LABORER;
     worker.manuallyAssigned = false;
+
+    // Clear gather-carry-deposit state
+    worker.gatherState = undefined;
+    worker.gatherTimer = 0;
+    worker.gatherTargetTile = null;
+    worker.carrying = null;
+    worker.carryAmount = 0;
+    worker.pendingResource = null;
   }
 
   getCitizenRenderData() {
@@ -970,9 +987,44 @@ export class Game {
     return this.globalResources.get(type) || 0;
   }
 
-  /** Add resource to global pool */
-  addResource(type: string, amount: number): void {
-    this.globalResources.set(type, (this.globalResources.get(type) || 0) + amount);
+  /** Get total storage capacity from all completed storage buildings + base */
+  getStorageCapacity(): number {
+    let cap = BASE_STORAGE_CAPACITY;
+    const buildings = this.world.getComponentStore<any>('building');
+    if (buildings) {
+      for (const [, bld] of buildings) {
+        if (bld.completed && bld.isStorage && bld.storageCapacity) {
+          cap += bld.storageCapacity;
+        }
+      }
+    }
+    return cap;
+  }
+
+  /** Get total resources stored (excludes house firewood which is per-house) */
+  getStorageUsed(): number {
+    let total = 0;
+    for (const [, val] of this.globalResources) {
+      total += val;
+    }
+    return total;
+  }
+
+  /** Check if global storage is at capacity */
+  isStorageFull(): boolean {
+    return this.getStorageUsed() >= this.getStorageCapacity();
+  }
+
+  /** Add resource to global pool, capped by storage capacity. Returns amount actually added. */
+  addResource(type: string, amount: number): number {
+    const used = this.getStorageUsed();
+    const cap = this.getStorageCapacity();
+    const space = Math.max(0, cap - used);
+    const actual = Math.min(amount, space);
+    if (actual > 0) {
+      this.globalResources.set(type, (this.globalResources.get(type) || 0) + actual);
+    }
+    return actual;
   }
 
   /** Remove resource from global pool, returns actual amount removed */

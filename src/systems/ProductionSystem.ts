@@ -6,18 +6,23 @@ import {
   EDUCATION_BONUS, BuildingType, ResourceType,
   NO_TOOL_PRODUCTION_MULT, TOOL_WEAR_PER_TICK,
   FORESTER_REPLANT_TICKS, TREE_GROWTH_TICKS,
-  FOREST_EFFICIENCY_DIVISOR,
   PLANTING_DAY_CROP_MULT,
   TRAIT_WORK_SPEED_BONUS, PersonalityTrait,
   CropStage, CROP_STAGE_TICKS, CROP_HARVEST_YIELD_MULT, Season,
   SKILL_EFFICIENCY_PER_LEVEL, SKILL_MASTERY_BONUS_CHANCE,
   SKILL_MAX_LEVEL, PROFESSION_SKILL_MAP,
   HAY_FROM_WHEAT,
+  STORAGE_FULL_LOG_INTERVAL,
+  BERRY_MUSHROOM_EFFICIENCY_DIVISOR, WILDLIFE_EFFICIENCY_DIVISOR,
+  FISH_EFFICIENCY_DIVISOR, HERB_EFFICIENCY_DIVISOR,
+  BERRY_DEPLETION, MUSHROOM_DEPLETION, HERB_DEPLETION,
+  FISH_DEPLETION, WILDLIFE_DEPLETION,
 } from '../constants';
 
 export class ProductionSystem {
   private game: Game;
   private foresterTimers = new Map<number, { replant: number; grow: number }>();
+  private lastStorageFullLog = 0;
 
   constructor(game: Game) {
     this.game = game;
@@ -46,6 +51,24 @@ export class ProductionSystem {
       // Crop fields use growth stage system instead of normal production
       if (bld.type === BuildingType.CROP_FIELD) {
         this.updateCropField(id, bld, producer, seasonData);
+        continue;
+      }
+
+      // Gathering buildings use physical gather-carry-deposit (driven by CitizenAISystem)
+      // They still get workerCount/active updates for UI, but skip timer/recipe logic
+      if (bld.type === BuildingType.GATHERING_HUT ||
+          bld.type === BuildingType.HUNTING_CABIN ||
+          bld.type === BuildingType.FISHING_DOCK ||
+          bld.type === BuildingType.HERBALIST ||
+          bld.type === BuildingType.FORESTER_LODGE) {
+        const workerCount = this.countWorkersAtBuilding(id);
+        producer.workerCount = workerCount;
+        producer.active = workerCount > 0;
+        // Forester special behavior: replant and grow trees
+        if (bld.type === BuildingType.FORESTER_LODGE) {
+          const pos = this.game.world.getComponent<any>(id, 'position');
+          if (pos) this.updateForester(id, pos, bld, workerCount);
+        }
         continue;
       }
 
@@ -105,7 +128,7 @@ export class ProductionSystem {
         }
       }
 
-      // Seasonal modifier
+      // Seasonal modifier — each building type reads its own seasonal curve
       if (recipe.seasonalMultiplier) {
         if (bld.type === BuildingType.CROP_FIELD) {
           efficiency *= seasonData.cropGrowth;
@@ -117,6 +140,15 @@ export class ProductionSystem {
           }
           // Milestone crop growth bonus
           efficiency *= (1 + milestones.getBonus('crop_growth'));
+        } else if (bld.type === BuildingType.HUNTING_CABIN) {
+          efficiency *= seasonData.huntingRate;
+          efficiency *= (1 + milestones.getBonus('gathering_speed'));
+        } else if (bld.type === BuildingType.FISHING_DOCK) {
+          efficiency *= seasonData.fishingRate;
+          efficiency *= (1 + milestones.getBonus('gathering_speed'));
+        } else if (bld.type === BuildingType.HERBALIST) {
+          efficiency *= seasonData.herbRate;
+          efficiency *= (1 + milestones.getBonus('gathering_speed'));
         } else {
           efficiency *= seasonData.gatheringRate;
           // Milestone gathering speed bonus
@@ -124,15 +156,27 @@ export class ProductionSystem {
         }
       }
 
-      // Gathering from radius needs forest
+      // Gathering from radius — use real tile resources for efficiency
       const pos = world.getComponent<any>(id, 'position');
-      if (recipe.gatherFromRadius && pos) {
+      if (pos) {
         const cx = pos.tileX + Math.floor(bld.width / 2);
         const cy = pos.tileY + Math.floor(bld.height / 2);
         const radius = bld.workRadius || 30;
 
-        const forestCount = this.game.tileMap.countForestInRadius(cx, cy, radius);
-        efficiency *= Math.min(1, forestCount / FOREST_EFFICIENCY_DIVISOR);
+        if (bld.type === BuildingType.GATHERING_HUT) {
+          const berryCount = this.game.tileMap.countResourceInRadius(cx, cy, radius, 'berries');
+          const mushroomCount = this.game.tileMap.countResourceInRadius(cx, cy, radius, 'mushrooms');
+          efficiency *= Math.min(1, (berryCount + mushroomCount) / BERRY_MUSHROOM_EFFICIENCY_DIVISOR);
+        } else if (bld.type === BuildingType.HUNTING_CABIN) {
+          const wildlifeCount = this.game.tileMap.countResourceInRadius(cx, cy, radius, 'wildlife');
+          efficiency *= Math.min(1, wildlifeCount / WILDLIFE_EFFICIENCY_DIVISOR);
+        } else if (bld.type === BuildingType.FISHING_DOCK) {
+          const fishCount = this.game.tileMap.countResourceInRadius(cx, cy, radius, 'fish');
+          efficiency *= Math.min(1, fishCount / FISH_EFFICIENCY_DIVISOR);
+        } else if (bld.type === BuildingType.HERBALIST) {
+          const herbCount = this.game.tileMap.countResourceInRadius(cx, cy, radius, 'herbs');
+          efficiency *= Math.min(1, herbCount / HERB_EFFICIENCY_DIVISOR);
+        }
       }
 
       if (efficiency <= 0) continue;
@@ -140,6 +184,12 @@ export class ProductionSystem {
       producer.timer += efficiency;
 
       if (producer.timer >= recipe.cooldownTicks) {
+        // Pause production if storage is full
+        if (this.game.isStorageFull()) {
+          this.logStorageFull();
+          continue;
+        }
+
         producer.timer = 0;
 
         // Check inputs
@@ -160,12 +210,22 @@ export class ProductionSystem {
           continue;
         }
 
-        // --- Resource depletion: consume trees when gathering ---
-        if (recipe.gatherFromRadius && pos) {
+        // --- Resource depletion: consume real tile resources on production ---
+        if (pos) {
           const cx = pos.tileX + Math.floor(bld.width / 2);
           const cy = pos.tileY + Math.floor(bld.height / 2);
           const radius = bld.workRadius || 30;
-          this.game.tileMap.consumeTreesInRadius(cx, cy, radius);
+
+          if (bld.type === BuildingType.GATHERING_HUT) {
+            this.game.tileMap.consumeResourceInRadius(cx, cy, radius, 'berries', BERRY_DEPLETION);
+            this.game.tileMap.consumeResourceInRadius(cx, cy, radius, 'mushrooms', MUSHROOM_DEPLETION);
+          } else if (bld.type === BuildingType.HUNTING_CABIN) {
+            this.game.tileMap.consumeResourceInRadius(cx, cy, radius, 'wildlife', WILDLIFE_DEPLETION);
+          } else if (bld.type === BuildingType.FISHING_DOCK) {
+            this.game.tileMap.consumeResourceInRadius(cx, cy, radius, 'fish', FISH_DEPLETION);
+          } else if (bld.type === BuildingType.HERBALIST) {
+            this.game.tileMap.consumeResourceInRadius(cx, cy, radius, 'herbs', HERB_DEPLETION);
+          }
         }
 
         // Consume inputs
@@ -194,10 +254,6 @@ export class ProductionSystem {
         }
       }
 
-      // --- Forester special behavior: replant and grow trees ---
-      if (bld.type === BuildingType.FORESTER_LODGE && pos) {
-        this.updateForester(id, pos, bld, workerCount);
-      }
     }
   }
 
@@ -239,6 +295,11 @@ export class ProductionSystem {
 
     // Ready → Harvest
     if (producer.cropStage === CropStage.READY) {
+      // Pause harvest if storage is full
+      if (this.game.isStorageFull()) {
+        this.logStorageFull();
+        return;
+      }
       // Harvest the crops
       const recipe = RECIPE_DEFS.find(r => r.buildingType === BuildingType.CROP_FIELD);
       if (recipe) {
@@ -324,7 +385,6 @@ export class ProductionSystem {
     return [
       BuildingType.HUNTING_CABIN,
       BuildingType.FISHING_DOCK,
-      BuildingType.FORESTER_LODGE,
       BuildingType.WOOD_CUTTER,
       BuildingType.BLACKSMITH,
       BuildingType.CROP_FIELD,
@@ -399,6 +459,14 @@ export class ProductionSystem {
       }
     }
     return count > 0 ? totalBonus / count : 0;
+  }
+
+  private logStorageFull(): void {
+    const tick = this.game.state.tick;
+    if (tick - this.lastStorageFullLog >= STORAGE_FULL_LOG_INTERVAL) {
+      this.lastStorageFullLog = tick;
+      logger.info('PRODUCTION', 'Storage full — production paused');
+    }
   }
 
   private countEducatedWorkers(buildingId: number): number {

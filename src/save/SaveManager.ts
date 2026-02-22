@@ -82,7 +82,12 @@ export class SaveManager {
         t.stoneAmount,
         t.ironAmount,
         t.blocksMovement ? 1 : 0,
-      ] as [number, number, number, number, number, number | null, number, number, number]),
+        t.berries,
+        t.mushrooms,
+        t.herbs,
+        t.fish,
+        t.wildlife,
+      ] as [number, number, number, number, number, number | null, number, number, number, number, number, number, number, number]),
 
       world: game.world.serialize(),
 

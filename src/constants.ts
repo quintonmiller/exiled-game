@@ -24,22 +24,22 @@ export const TICKS_PER_YEAR = TICKS_PER_SUB_SEASON * SUB_SEASONS_PER_YEAR;
 
 // Day/night cycle (each visual day = 60 seconds real time at 1x)
 export const TICKS_PER_DAY = 600;  // 60 seconds real time at 1x
-export const DAYS_PER_YEAR = TICKS_PER_YEAR / TICKS_PER_DAY; // 60
+export const DAYS_PER_YEAR = 365; // 60
 export const DAWN_START = 0.2;
 export const DUSK_START = 0.75;
 export const NIGHT_DARKNESS = 0.55;
 
 // ── Semantic time units ────────────────────────────────────────
-export const HOUR   = TICKS_PER_DAY / 24;         // 25 ticks
+export const HOUR   = TICKS_PER_DAY / 24;          // 25 ticks
 export const DAY    = TICKS_PER_DAY;               // 600 ticks
-export const MONTH  = TICKS_PER_SUB_SEASON;        // 600 ticks (= 1 sub-season)
-export const SEASON = 3 * MONTH;                   // 1800 ticks
-export const YEAR   = TICKS_PER_YEAR;              // 7200 ticks
+export const MONTH  = 30 * DAY;                    // 18,000 ticks (= 1 sub-season)
+export const SEASON = 3 * MONTH;                   // 54,000 ticks
+export const YEAR   = 12 * MONTH;              // 7200 ticks
 
 // ── Citizens ───────────────────────────────────────────────────
 export const STARTING_ADULTS = 5;
 export const STARTING_CHILDREN = 2;
-export const CITIZEN_SPEED = 1.5; // tiles per second
+export const CITIZEN_SPEED = 12; // tiles per second
 export const CHILD_AGE = 10;
 export const OLD_AGE = 60;
 export const YEARS_PER_REAL_YEAR = 5;
@@ -50,7 +50,7 @@ export const FOREST_SPEED_MULT = 0.6;
 export const DEFAULT_SPEED_MULT = 1.0;
 
 // ── Needs (0..100) ─────────────────────────────────────────────
-export const FOOD_DECAY_PER_TICK    = 100 / (2 * DAY);       // fully depletes in 2 days → ~2 meals/day
+export const FOOD_DECAY_PER_TICK    = 100 / (7 * DAY);       // fully depletes in 2 days → ~2 meals/day
 export const WARMTH_DECAY_PER_TICK  = 0.03;                   // modified by temperature in winter
 export const HEALTH_DECAY_PER_TICK  = 0.005;
 export const HAPPINESS_DECAY_PER_TICK = 0.003;
@@ -180,6 +180,8 @@ export const HAPPY_ENERGY_THRESHOLD = 50;
 export const HAPPINESS_GAIN_RATE = 0.005;
 
 // Storage / Houses
+export const BASE_STORAGE_CAPACITY = 500;
+export const STORAGE_FULL_LOG_INTERVAL = 300;
 export const STORAGE_CHECK_INTERVAL = 30;
 export const HOUSE_FIREWOOD_MIN = 10;
 export const HOUSE_FIREWOOD_TARGET = 20;
@@ -302,6 +304,56 @@ export const NATURAL_REGROWTH_CHANCE = 0.00002;
 export const TREE_GROWTH_TICKS = 5 * MONTH;                   // 5 months per density level
 export const STONE_DEPOSIT_AMOUNT = 50;
 export const IRON_DEPOSIT_AMOUNT = 30;
+
+// ── Map Resources ─────────────────────────────────────────────
+// Max amounts per tile
+export const MAX_BERRIES = 5;
+export const MAX_MUSHROOMS = 3;
+export const MAX_HERBS = 3;
+export const MAX_FISH = 8;
+export const MAX_WILDLIFE = 3;
+
+// Generation chances per eligible tile type
+export const BERRY_FOREST_CHANCE = 0.40;
+export const BERRY_FERTILE_CHANCE = 0.20;
+export const MUSHROOM_FOREST_CHANCE = 0.30;
+export const HERB_CHANCE = 0.15;
+export const HERB_MIN_MOISTURE = 0.4;
+export const FISH_WATER_CHANCE = 0.80;
+export const WILDLIFE_FOREST_CHANCE = 0.25;
+export const WILDLIFE_GRASS_CHANCE = 0.10;
+
+// Regrowth chances per tick (when scanned by EnvironmentSystem)
+export const BERRY_REGROWTH_CHANCE = 0.0001;
+export const MUSHROOM_REGROWTH_CHANCE = 0.00008;
+export const HERB_REGROWTH_CHANCE = 0.00008;
+export const FISH_REGROWTH_CHANCE = 0.0003;
+export const WILDLIFE_REGROWTH_CHANCE = 0.00005;
+
+// ── Gather-Carry-Deposit ─────────────────────────────────────
+export const GATHER_TICKS_BASE = 30;             // ticks at resource tile before harvest (~3 sec at 1x)
+export const GATHER_CARRY_CAPACITY = 10;         // units per trip
+export const GATHER_DEPLETION_PER_HARVEST = 1;   // tile resource lost per gather action
+export const GATHER_ROOTS_CHANCE = 0.4;          // Gathering Hut: chance of bonus root per trip
+export const GATHER_CARRY_SKILL_BONUS = 1;       // +N carry capacity per skill level
+export const GATHER_TOOL_WEAR_PER_TRIP = 0.05;   // tool durability per completed trip
+
+// Forester gather-carry-deposit
+export const FORESTER_CHOP_TICKS = 60;      // ticks to fell one tree (2x berry gathering)
+export const FORESTER_CARRY_CAPACITY = 3;   // logs per trip
+
+// Efficiency divisors for gathering buildings (resource count / divisor = efficiency 0-1)
+export const BERRY_MUSHROOM_EFFICIENCY_DIVISOR = 40;
+export const WILDLIFE_EFFICIENCY_DIVISOR = 20;
+export const FISH_EFFICIENCY_DIVISOR = 40;
+export const HERB_EFFICIENCY_DIVISOR = 15;
+
+// Depletion amounts per harvest cycle
+export const BERRY_DEPLETION = 1;
+export const MUSHROOM_DEPLETION = 1;
+export const HERB_DEPLETION = 1;
+export const FISH_DEPLETION = 1;
+export const WILDLIFE_DEPLETION = 1;
 
 // ── Personality Traits ─────────────────────────────────────────
 export const PersonalityTrait = {
