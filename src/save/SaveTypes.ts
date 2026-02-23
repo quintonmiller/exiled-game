@@ -1,10 +1,10 @@
 import { EventLogEntry } from '../types';
 
 export const SAVE_VERSION = 3;
-export const SAVE_KEY = 'banished_clone_save';
+export const SAVE_KEY = 'exiled_game_save';
 
 // IndexedDB constants
-export const IDB_NAME = 'banished_clone_db';
+export const IDB_NAME = 'exiled_game_db';
 export const IDB_VERSION = 1;
 export const IDB_STORE = 'saves';
 export const IDB_SAVE_KEY = 'current'; // single-slot key within the object store

@@ -1,7 +1,7 @@
-# Banished Clone - Claude Code Project Guide
+# Exiled - Claude Code Project Guide
 
 ## Project Overview
-A 2D browser-playable Banished/Stardew Valley hybrid — a city-building survival sandbox with deeper citizen personalities, skill progression, festivals, livestock, and narrative events. No win state; the central challenge is avoiding the **death spiral** (resource shortage -> deaths -> fewer workers -> more shortage).
+A 2D browser-playable city-building survival sandbox — Exiled — with deeper citizen personalities, skill progression, festivals, livestock, and narrative events. No win state; the central challenge is avoiding the **death spiral** (resource shortage -> deaths -> fewer workers -> more shortage).
 
 ## Tech Stack
 - **Language:** TypeScript (strict mode)

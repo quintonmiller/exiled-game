@@ -1,6 +1,6 @@
-# Banished Clone
+# Exiled
 
-A 2D browser-playable hybrid of [Banished](https://www.shiningrocksoftware.com/) and Stardew Valley — a city-building survival sandbox with deeper citizen personalities, skill progression, festivals, livestock, and narrative events. Guide a group of exiled travelers as they build a new settlement, manage resources, and survive harsh seasons.
+Exiled — a 2D browser-playable city-building survival sandbox with deeper citizen personalities, skill progression, festivals, livestock, and narrative events. Guide a group of exiled travelers as they build a new settlement, manage resources, and survive harsh seasons.
 
 Built with TypeScript and HTML5 Canvas. No frameworks, no dependencies beyond Vite.
 
@@ -169,4 +169,4 @@ Lightweight Entity Component System (ECS) with 16 game systems, all rendered on 
 
 ## License
 
-This is a fan project for educational purposes. Banished is a trademark of Shining Rock Software.
+MIT License — open source for personal and educational use.

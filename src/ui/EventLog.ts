@@ -111,6 +111,16 @@ export class EventLog {
         data.id, data.tileX, data.tileY);
     });
 
+    bus.on('building_upgrade_started', (data: any) => {
+      this.addEntry('building', `Upgrading ${data.name} to ${data.targetName}...`, '#ddbb44',
+        data.id, data.tileX, data.tileY);
+    });
+
+    bus.on('building_upgraded', (data: any) => {
+      this.addEntry('building', `${data.name} upgrade complete!`, '#ffdd44',
+        data.id, data.tileX, data.tileY);
+    });
+
     bus.on('merchant_arrived', () => {
       this.addEntry('trade', 'A merchant has arrived', '#ffaa44');
     });
@@ -199,10 +209,11 @@ export class EventLog {
 
       const maxScroll = Math.max(0, this.entries.length - EVENT_LOG_VISIBLE_ROWS);
       this.scrollOffset = maxScroll;
+      this.emitNotification(lastEntry);
       return;
     }
 
-    this.entries.push({
+    const entry: EventLogEntry = {
       id: this.nextId++,
       tick: s.tick,
       year: s.year,
@@ -213,7 +224,8 @@ export class EventLog {
       entityId,
       tileX,
       tileY,
-    });
+    };
+    this.entries.push(entry);
 
     if (this.entries.length > EVENT_LOG_MAX_ENTRIES) {
       this.entries.splice(0, this.entries.length - EVENT_LOG_MAX_ENTRIES);
@@ -222,6 +234,7 @@ export class EventLog {
     // Auto-scroll to bottom when new entry added
     const maxScroll = Math.max(0, this.entries.length - EVENT_LOG_VISIBLE_ROWS);
     this.scrollOffset = maxScroll;
+    this.emitNotification(entry);
   }
 
   getEntries(): EventLogEntry[] {
@@ -233,6 +246,17 @@ export class EventLog {
     this.nextId = entries.length > 0 ? Math.max(...entries.map(e => e.id)) + 1 : 0;
     const maxScroll = Math.max(0, this.entries.length - EVENT_LOG_VISIBLE_ROWS);
     this.scrollOffset = maxScroll;
+  }
+
+  private emitNotification(entry: EventLogEntry): void {
+    const text = entry.repeatCount && entry.repeatCount > 1
+      ? `${entry.text} (${entry.repeatCount})`
+      : entry.text;
+    this.game.eventBus.emit('notification', {
+      key: `event-log:${entry.category}:${entry.text}`,
+      text,
+      color: entry.color,
+    });
   }
 
   /** Pure hit-test: returns true if the point is over the event log panel (no side effects) */

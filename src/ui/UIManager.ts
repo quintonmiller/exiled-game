@@ -13,6 +13,9 @@ import { VillagerPanel } from './VillagerPanel';
 import { Settings } from '../Settings';
 import { logger, LOG_LEVEL_NAMES } from '../utils/Logger';
 
+const NOTIFICATION_DURATION_MS = 3000;
+const NOTIFICATION_FADE_MS = 600;
+
 export class UIManager {
   private game: Game;
   private buildMenu: BuildMenu;
@@ -24,7 +27,7 @@ export class UIManager {
   buildMenuOpen = false;
   debugOverlay = false;
   debugTile: { x: number; y: number } | null = null;
-  private notifications: Array<{ text: string; time: number; color: string }> = [];
+  private notifications: Array<{ text: string; color: string; expiresAt: number; dedupeKey?: string }> = [];
 
   constructor(game: Game) {
     this.game = game;
@@ -35,52 +38,10 @@ export class UIManager {
     this.resourceLimitsPanel = new ResourceLimitsPanel(game);
     this.villagerPanel = new VillagerPanel(game);
 
-    // Listen for events
-    game.eventBus.on('citizen_died', (data: any) => {
-      this.addNotification(`${data.name} has died`, '#ff4444');
-    });
-    game.eventBus.on('citizen_born', () => {
-      this.addNotification('A child has been born!', '#44ff44');
-    });
-    game.eventBus.on('merchant_arrived', () => {
-      this.addNotification('A merchant has arrived!', '#ffaa44');
-    });
-    game.eventBus.on('nomads_arrived', (data: any) => {
-      const viaLabel = data.via === 'river'
-        ? 'by river'
-        : data.via === 'road'
-          ? 'by road'
-          : data.via === 'outreach'
-            ? 'from outreach'
-            : 'nearby';
-      this.addNotification(`${data.count} newcomers arrived (${viaLabel})`, '#66dd66');
-    });
-    game.eventBus.on('new_year', (data: any) => {
-      this.addNotification(`Year ${data.year} begins`, '#ffffff');
-    });
-    game.eventBus.on('festival_started', (data: any) => {
-      const names: Record<string, string> = {
-        planting_day: 'Planting Day',
-        midsummer: 'Midsummer Celebration',
-        harvest_festival: 'Harvest Festival',
-        frost_fair: 'Frost Fair',
-      };
-      this.addNotification(`${names[data.type] || 'Festival'} has begun!`, '#ffdd44');
-    });
-    game.eventBus.on('milestone_achieved', (data: any) => {
-      this.addNotification(`Milestone: ${data.name}!`, '#ffcc00');
-    });
-    game.eventBus.on('building_upgrade_started', (data: any) => {
-      this.addNotification(`Upgrading ${data.name} to ${data.targetName}...`, '#ddbb44');
-    });
-    game.eventBus.on('building_upgraded', (data: any) => {
-      this.addNotification(`${data.name} upgrade complete!`, '#ffdd44');
-    });
-    game.eventBus.on('building_demolition_started', (data: any) => {
-      this.addNotification(`Demolishing ${data.name}...`, '#dd8866');
-    });
-    game.eventBus.on('building_demolished', (data: any) => {
-      this.addNotification(`${data.name} demolished`, '#cc7766');
+    // Common notification channel for all systems and event log entries.
+    game.eventBus.on('notification', (data: any) => {
+      if (!data?.text) return;
+      this.addNotification(data.text, data.color || '#ffffff', data.key);
     });
   }
 
@@ -203,8 +164,30 @@ export class UIManager {
     return this.villagerPanel.handleScroll(delta, mouseX, mouseY);
   }
 
-  addNotification(text: string, color: string): void {
-    this.notifications.push({ text, time: 300, color });
+  addNotification(text: string, color: string, dedupeKey?: string): void {
+    const expiresAt = performance.now() + NOTIFICATION_DURATION_MS;
+    const key = typeof dedupeKey === 'string' && dedupeKey.length > 0 ? dedupeKey : undefined;
+
+    for (let i = this.notifications.length - 1; i >= 0; i--) {
+      const n = this.notifications[i];
+      const isMatch = key
+        ? n.dedupeKey === key
+        : !n.dedupeKey && n.text === text && n.color === color;
+      if (!isMatch) continue;
+
+      n.text = text;
+      n.color = color;
+      n.expiresAt = expiresAt;
+      if (key) n.dedupeKey = key;
+      return;
+    }
+
+    this.notifications.push({
+      text,
+      color,
+      expiresAt,
+      dedupeKey: key,
+    });
     if (this.notifications.length > 5) {
       this.notifications.shift();
     }
@@ -317,24 +300,85 @@ export class UIManager {
     if (this.eventLog.visible) {
       y = HUD_HEIGHT + 10 + EVENT_LOG_HEADER_HEIGHT + EVENT_LOG_VISIBLE_ROWS * EVENT_LOG_ROW_HEIGHT + 18;
     }
+
+    const boxX = 10;
+    const boxW = 300;
+    const boxPadX = 5;
+    const boxPadY = 4;
+    const lineHeight = 13;
+    const boxGap = 4;
+    const now = performance.now();
+
+    ctx.font = '12px monospace';
+
     for (let i = this.notifications.length - 1; i >= 0; i--) {
       const n = this.notifications[i];
-      n.time--;
-      if (n.time <= 0) {
+      const remainingMs = n.expiresAt - now;
+      if (remainingMs <= 0) {
         this.notifications.splice(i, 1);
         continue;
       }
 
-      const alpha = Math.min(1, n.time / 60);
+      const lines = this.wrapText(ctx, n.text, boxW - boxPadX * 2);
+      const boxH = Math.max(22, boxPadY * 2 + lines.length * lineHeight);
+      const alpha = remainingMs < NOTIFICATION_FADE_MS
+        ? Math.max(0, remainingMs / NOTIFICATION_FADE_MS)
+        : 1;
       ctx.fillStyle = `rgba(0,0,0,${alpha * 0.7})`;
-      ctx.fillRect(10, y, 300, 22);
+      ctx.fillRect(boxX, y, boxW, boxH);
       ctx.fillStyle = n.color;
       ctx.globalAlpha = alpha;
-      ctx.font = '12px monospace';
-      ctx.fillText(n.text, 15, y + 15);
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx];
+        ctx.fillText(line, boxX + boxPadX, y + boxPadY + 11 + lineIdx * lineHeight);
+      }
       ctx.globalAlpha = 1;
-      y += 25;
+      y += boxH + boxGap;
     }
+  }
+
+  private wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [''];
+
+    const lines: string[] = [];
+    let current = '';
+
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        current = candidate;
+        continue;
+      }
+
+      if (current) {
+        lines.push(current);
+      }
+
+      if (ctx.measureText(word).width <= maxWidth) {
+        current = word;
+        continue;
+      }
+
+      // Break overly-long single words to ensure they still fit.
+      let chunk = '';
+      for (const ch of word) {
+        const nextChunk = chunk + ch;
+        if (ctx.measureText(nextChunk).width <= maxWidth) {
+          chunk = nextChunk;
+        } else {
+          if (chunk) lines.push(chunk);
+          chunk = ch;
+        }
+      }
+      current = chunk;
+    }
+
+    if (current) {
+      lines.push(current);
+    }
+
+    return lines;
   }
 
   private drawSpeedControls(ctx: CanvasRenderingContext2D, canvasWidth: number): void {
