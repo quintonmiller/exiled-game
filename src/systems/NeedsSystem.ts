@@ -308,6 +308,18 @@ export class NeedsSystem {
       if (partnerFamily) {
         partnerFamily.partnerId = null;
         partnerFamily.relationshipStatus = 'single';
+        partnerFamily.partnershipStartTick = undefined;
+        partnerFamily.compatibility = undefined;
+      }
+    }
+
+    // Remove dead citizen from all relationship maps
+    const allFamilies = this.game.world.getComponentStore<any>('family');
+    if (allFamilies) {
+      for (const [, fam] of allFamilies) {
+        if (fam.relationships) {
+          delete fam.relationships[id];
+        }
       }
     }
 

@@ -196,6 +196,50 @@
       <h2>Narrative Events</h2>
       <p>Random events occasionally occur in your settlement. A citizen might find extra food while wandering, tell a story that boosts morale, or discover hidden resources. These are small, positive moments that add flavor to your settlement's story.</p>
     </div>
+
+    <!-- Relationships -->
+    <div class="panel" id="relationships">
+      <h2>Relationships</h2>
+      <p>Citizens build relationships organically through daily interactions. Each pair of citizens tracks a <strong>relationship score</strong> (0&ndash;100) that grows over time.</p>
+
+      <h3>How Relationship Scores Grow</h3>
+      <ul>
+        <li><strong>Social chats:</strong> Chatting, visiting neighbours, or comforting the sick all add to the score.</li>
+        <li><strong>Tavern visits:</strong> Sharing drinks at the tavern builds bonds.</li>
+        <li><strong>Working together:</strong> Co-workers at the same building slowly grow closer.</li>
+        <li><strong>Partner leisure:</strong> Spending leisure time together strengthens a couple's bond.</li>
+      </ul>
+
+      <h3>Partnership Formation</h3>
+      <p>Single citizens with a relationship score of <strong>15+</strong> have a chance to become partners each cycle. The probability is weighted by:</p>
+      <ul>
+        <li>Their relationship score (higher = better chance)</li>
+        <li>Age proximity (closer in age = bonus)</li>
+        <li>Shared personality traits</li>
+        <li>Matching education level</li>
+      </ul>
+
+      <h3>Marriage</h3>
+      <p>Partners can advance to marriage if all conditions are met:</p>
+      <ul>
+        <li>A <a href="building.html?id=chapel">Chapel</a> must exist in the settlement.</li>
+        <li>They must have been partners for at least <strong>3 months</strong>.</li>
+        <li>Higher compatibility and relationship scores improve the chance.</li>
+      </ul>
+      <p>Newlyweds automatically try to share a house.</p>
+
+      <h3>Breakups &amp; Divorce</h3>
+      <p>Couples can break up or divorce (checked monthly). Low-compatibility couples are more likely to split. Longer relationships are more stable. Both partners suffer a happiness penalty when it happens.</p>
+
+      <h3>Conception</h3>
+      <p>Conception chances depend on relationship type:</p>
+      <ul>
+        <li><strong>Married couples</strong> have the highest base chance, further boosted by compatibility and time together.</li>
+        <li><strong>Partners</strong> have a moderate base chance with the same bonuses.</li>
+        <li><strong>Non-partners</strong> sharing a house have a very low flat chance.</li>
+        <li>Spending <strong>leisure time together</strong> provides a significant conception boost.</li>
+      </ul>
+    </div>
   </main>
 
   <footer>

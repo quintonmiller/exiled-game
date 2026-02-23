@@ -151,6 +151,12 @@ export class EventLog {
       this.addEntry('weather', 'The weather has cleared', '#aaddaa');
     });
 
+    bus.on('partnership', (data: any) => {
+      const first = this.game.world.getComponent<any>(data.partnerAId, 'citizen');
+      const second = this.game.world.getComponent<any>(data.partnerBId, 'citizen');
+      this.addEntry('social', `${first?.name || 'Unknown'} and ${second?.name || 'Unknown'} became partners`, '#ddaacc');
+    });
+
     bus.on('wedding', (data: any) => {
       const firstId = data.partnerAId ?? data.maleId;
       const secondId = data.partnerBId ?? data.femaleId;
@@ -159,6 +165,18 @@ export class EventLog {
       const firstName = first?.name || 'Unknown';
       const secondName = second?.name || 'Unknown';
       this.addEntry('social', `${firstName} and ${secondName} got married!`, '#ff88cc');
+    });
+
+    bus.on('breakup', (data: any) => {
+      const first = this.game.world.getComponent<any>(data.partnerAId, 'citizen');
+      const second = this.game.world.getComponent<any>(data.partnerBId, 'citizen');
+      this.addEntry('social', `${first?.name || 'Unknown'} and ${second?.name || 'Unknown'} broke up`, '#cc88aa');
+    });
+
+    bus.on('divorce', (data: any) => {
+      const first = this.game.world.getComponent<any>(data.partnerAId, 'citizen');
+      const second = this.game.world.getComponent<any>(data.partnerBId, 'citizen');
+      this.addEntry('social', `${first?.name || 'Unknown'} and ${second?.name || 'Unknown'} divorced`, '#cc88aa');
     });
 
     bus.on('festival_started', (data: any) => {

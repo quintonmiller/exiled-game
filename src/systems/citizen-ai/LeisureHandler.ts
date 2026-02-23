@@ -86,7 +86,6 @@ import {
   LEISURE_COMFORT_HAPPINESS_SELF,
   LEISURE_COMFORT_HAPPINESS_SICK,
   LEISURE_COMFORT_HEALTH_SICK,
-  MEETINGS_TO_BECOME_PARTNERS,
   LEISURE_PARTNER_WAIT_TICKS,
   LEISURE_SOCIAL_SCAN_RADIUS,
   LEISURE_SOCIAL_INITIATE_CHANCE,
@@ -97,7 +96,11 @@ import {
   TAVERN_HAPPINESS_PER_TICK,
   TAVERN_STAY_DURATION,
 } from '../../constants';
-import { hasTrait, getTraitMult } from './CitizenUtils';
+import {
+  REL_GAIN_SOCIAL_CHAT, REL_GAIN_TAVERN, REL_GAIN_VISIT,
+  REL_GAIN_LEISURE_PARTNER,
+} from '../../constants';
+import { hasTrait, getTraitMult, incrementRelationship } from './CitizenUtils';
 import { isOffDuty } from './WorkHoursHelper';
 
 type LeisureActivity =
@@ -415,9 +418,7 @@ export class LeisureHandler {
       const happyMult = getTraitMult(citizen, TRAIT_HAPPINESS_GAIN_MULT);
       needs.happiness = Math.min(100, needs.happiness + LEISURE_SOCIALIZE_HAPPINESS * AI_TICK_INTERVAL * happyMult);
 
-      const family      = this.game.world.getComponent<any>(id, 'family');
-      const otherFamily = this.game.world.getComponent<any>(targetId, 'family');
-      this.trackSocialMeeting(id, citizen, family, targetId, targetCit, otherFamily);
+      incrementRelationship(this.game.world, id, targetId, REL_GAIN_SOCIAL_CHAT);
 
       citizen.activity = 'chatting';
       return true;
@@ -503,8 +504,16 @@ export class LeisureHandler {
       // Start a stay timer (handled by CitizenAISystem like campfireTimer)
       citizen.tavernTimer = TAVERN_STAY_DURATION;
       citizen.leisureTavernId = undefined;
-      // Track potential relationship formation with other current patrons
-      this.trackTavernMeetings(id, citizen);
+      // Boost relationships with all other patrons in the same tavern
+      const citizenStore = this.game.world.getComponentStore<any>('citizen');
+      if (citizenStore) {
+        for (const [otherId, otherCit] of citizenStore) {
+          if (otherId === id || otherCit.isChild) continue;
+          if (citizen.insideBuildingId && citizen.insideBuildingId === otherCit.insideBuildingId) {
+            incrementRelationship(this.game.world, id, otherId, REL_GAIN_TAVERN);
+          }
+        }
+      }
       // Seed the happiness — timer handler continues it each tick
       needs.happiness = Math.min(100, needs.happiness + TAVERN_HAPPINESS_PER_TICK * AI_TICK_INTERVAL);
       needs.lastSocialTick = this.game.state.tick;
@@ -569,6 +578,7 @@ export class LeisureHandler {
         citizen.hadLeisureWithPartner = true;
         if (partnerCit) partnerCit.hadLeisureWithPartner = true;
         needs.happiness = Math.min(100, needs.happiness + LEISURE_PARTNER_HAPPINESS * AI_TICK_INTERVAL);
+        incrementRelationship(this.game.world, id, partnerId, REL_GAIN_LEISURE_PARTNER);
         citizen.leisureStartTick = undefined;
       }
       return true;
@@ -699,9 +709,7 @@ export class LeisureHandler {
             residentNeeds.happiness + LEISURE_VISIT_HOST_HAPPINESS * AI_TICK_INTERVAL);
           residentNeeds.lastSocialTick = this.game.state.tick;
 
-          const visitorFam  = this.game.world.getComponent<any>(id, 'family');
-          const residentFam = this.game.world.getComponent<any>(residentId, 'family');
-          this.trackSocialMeeting(id, citizen, visitorFam, residentId, residentCit, residentFam);
+          incrementRelationship(this.game.world, id, residentId, REL_GAIN_VISIT);
         }
       }
 
@@ -1059,52 +1067,6 @@ export class LeisureHandler {
 
     this.nav.wander(id);
     return true;
-  }
-
-  // ── Social meeting tracking ───────────────────────────────────
-
-  private trackSocialMeeting(
-    idA: EntityId,
-    citizenA: any,
-    familyA: any,
-    idB: EntityId,
-    citizenB: any,
-    familyB: any,
-  ): void {
-    if (familyA?.relationshipStatus !== 'single') return;
-    if (familyB?.relationshipStatus !== 'single') return;
-    if (!this.game.populationSystem.canFormPartnership(idA, idB)) return;
-
-    if (!citizenA.socialMeetings) citizenA.socialMeetings = {};
-    if (!citizenB.socialMeetings) citizenB.socialMeetings = {};
-
-    citizenA.socialMeetings[idB] = (citizenA.socialMeetings[idB] ?? 0) + 1;
-    citizenB.socialMeetings[idA] = (citizenB.socialMeetings[idA] ?? 0) + 1;
-
-    if (citizenA.socialMeetings[idB] >= MEETINGS_TO_BECOME_PARTNERS) {
-      this.game.populationSystem.linkPartners(idA, idB, 'partnered');
-      delete citizenA.socialMeetings[idB];
-      delete citizenB.socialMeetings[idA];
-    }
-  }
-
-  private trackTavernMeetings(id: EntityId, citizen: any): void {
-    const family = this.game.world.getComponent<any>(id, 'family');
-    if (family?.relationshipStatus !== 'single') return;
-
-    const citizenStore = this.game.world.getComponentStore<any>('citizen');
-    const familyStore  = this.game.world.getComponentStore<any>('family');
-    if (!citizenStore || !familyStore) return;
-
-    for (const [otherId, otherCit] of citizenStore) {
-      if (otherId === id) continue;
-      if (otherCit.isChild) continue;
-      const otherFam = familyStore.get(otherId);
-      if (otherFam?.relationshipStatus !== 'single') continue;
-      if (!citizen.insideBuildingId || citizen.insideBuildingId !== otherCit.insideBuildingId) continue;
-
-      this.trackSocialMeeting(id, citizen, family, otherId, otherCit, otherFam);
-    }
   }
 
   // ── Navigation / lookup helpers ───────────────────────────────
@@ -1521,10 +1483,8 @@ export class LeisureHandler {
         needs.happiness + LEISURE_COMFORT_HAPPINESS_SELF * AI_TICK_INTERVAL);
       needs.lastSocialTick = this.game.state.tick;
 
-      // Count as a social meeting
-      const visitorFam = this.game.world.getComponent<any>(id, 'family');
-      const targetFam  = this.game.world.getComponent<any>(targetId, 'family');
-      this.trackSocialMeeting(id, citizen, visitorFam, targetId, targetCit, targetFam);
+      // Count as a social interaction
+      incrementRelationship(this.game.world, id, targetId, REL_GAIN_SOCIAL_CHAT);
 
       return true;
     }

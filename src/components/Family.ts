@@ -10,4 +10,7 @@ export interface FamilyComponent {
   isPregnant?: boolean;
   pregnancyTicks?: number;
   pregnancyPartnerId?: EntityId | null;
+  relationships?: Record<number, number>;   // entityId -> score (0-100)
+  partnershipStartTick?: number;            // when current partnership began
+  compatibility?: number;                   // cached compatibility with partner (0-1)
 }

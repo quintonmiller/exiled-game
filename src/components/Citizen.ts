@@ -10,7 +10,6 @@ export interface CitizenComponent {
   isEducated: boolean;
   partnerPreference: PartnerPreference;
   // Leisure / relationship tracking (optional — safe to be absent on old saves)
-  socialMeetings?: Record<number, number>;   // otherId -> meeting count
   hadLeisureWithPartner?: boolean;           // reset daily; read by PopulationSystem
   leisureStartTick?: number;                 // tick when current leisure activity began
   educationProgress?: number;               // accumulates toward EDUCATION_PROGRESS_NEEDED

@@ -26,8 +26,9 @@ import { LeisureHandler } from './LeisureHandler';
 import { isOffDuty, isUrgent } from './WorkHoursHelper';
 import {
   GATHER_BUILDING_TYPES, MINE_BUILDING_TYPES, BUILDING_ACTIVITY_LABELS,
-  grantSkillXP, hasTrait, professionActivity,
+  grantSkillXP, hasTrait, professionActivity, incrementRelationship,
 } from './CitizenUtils';
+import { REL_GAIN_WORK_TOGETHER } from '../../constants';
 
 export class CitizenAISystem {
   private game: Game;
@@ -348,6 +349,15 @@ export class CitizenAISystem {
             movement.stuckTicks = 0; // Working, not stuck
             // Grant skill XP while working
             grantSkillXP(worker);
+            // Build relationships with co-workers at same building
+            if (bld?.assignedWorkers) {
+              for (const coworkerId of bld.assignedWorkers) {
+                if (coworkerId === id) continue;
+                if (this.nav.isNearBuilding(coworkerId, worker.workplaceId)) {
+                  incrementRelationship(this.game.world, id, coworkerId, REL_GAIN_WORK_TOGETHER);
+                }
+              }
+            }
             // Under construction or upgrading: just stay near the site
             if (!isConstructionSite && !isUpgradingSite) {
               if (bld && this.nav.isIndoorBuilding(bld.type)) {

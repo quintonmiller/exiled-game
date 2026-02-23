@@ -100,17 +100,13 @@ export const FAMILY_CHECK_INTERVAL = 100;                      // ticks between 
 export const PARTNER_PREFERENCE_OPPOSITE_SHARE = 0.8;
 export const PARTNER_PREFERENCE_BOTH_SHARE = 0.1;
 export const PARTNER_PREFERENCE_SAME_SHARE = 0.1;
-export const INITIAL_RELATIONSHIP_SINGLE_SHARE = 0.5;
-export const INITIAL_RELATIONSHIP_PARTNERED_SHARE = 0.3;
-export const INITIAL_RELATIONSHIP_MARRIED_SHARE = 0.2;
-export const MARRIAGE_CHANCE_PARTNERED = 0.08;
-
+export const INITIAL_RELATIONSHIP_SINGLE_SHARE = 0.8;
+export const INITIAL_RELATIONSHIP_PARTNERED_SHARE = 0.15;
+export const INITIAL_RELATIONSHIP_MARRIED_SHARE = 0.05;
 // Pregnancy
 export const PREGNANCY_DURATION_TICKS = 9 * MONTH;            // 9 months
 export const TRIMESTER_1_END = 3 * MONTH;
 export const TRIMESTER_2_END = 6 * MONTH;
-export const CONCEPTION_CHANCE_PARTNER = 0.03;
-export const CONCEPTION_CHANCE_NON_PARTNER = 0.005;
 // Trimester 1 modifiers (months 1-3)
 export const T1_FOOD_DECAY_MULT = 1.15;
 export const T1_ENERGY_DECAY_MULT = 1.0;
@@ -868,7 +864,45 @@ export const LEISURE_PARTNER_HAPPINESS = 0.008;
 export const LEISURE_SOCIALIZE_HAPPINESS = 0.006;    // happiness on successful chat
 export const LEISURE_PRACTICE_XP_MULT = 0.5;
 export const LEISURE_PRACTICE_HAPPINESS = 0.003;
-export const MEETINGS_TO_BECOME_PARTNERS = 3;
+// ── Relationship System ───────────────────────────────────────
+// Relationship score gains
+export const REL_GAIN_SOCIAL_CHAT = 3;
+export const REL_GAIN_WORK_TOGETHER = 0.1;
+export const REL_GAIN_SAME_BUILDING = 0.05;
+export const REL_GAIN_TAVERN = 2;
+export const REL_GAIN_VISIT = 2;
+export const REL_GAIN_LEISURE_PARTNER = 0.5;
+export const REL_GAIN_RANDOM_RANGE = 0.5;
+export const REL_MAX = 100;
+// Partnership formation
+export const PARTNERSHIP_MIN_REL_SCORE = 15;
+export const PARTNERSHIP_BASE_CHANCE = 0.02;
+export const PARTNERSHIP_AGE_BONUS_PER_YEAR = 0.002;
+export const PARTNERSHIP_TRAIT_COMPAT_BONUS = 0.01;
+export const PARTNERSHIP_EDUCATION_MATCH_BONUS = 0.01;
+export const PARTNERSHIP_REL_SCORE_MULT = 0.001;
+// Breakup / divorce
+export const BREAKUP_CHECK_INTERVAL = 1 * MONTH;
+export const BREAKUP_BASE_CHANCE_PARTNER = 0.03;
+export const BREAKUP_BASE_CHANCE_MARRIED = 0.005;
+export const BREAKUP_COMPAT_PENALTY = 0.04;
+export const BREAKUP_TIME_REDUCTION_PER_MONTH = 0.002;
+export const BREAKUP_MIN_CHANCE = 0.001;
+export const BREAKUP_HAPPINESS_PENALTY = 15;
+export const BREAKUP_REL_SCORE_DROP = 30;
+// Marriage requirements
+export const MARRIAGE_MIN_PARTNERSHIP_TICKS = 3 * MONTH;
+export const MARRIAGE_REQUIRES_CHAPEL = true;
+export const MARRIAGE_BASE_CHANCE = 0.04;
+export const MARRIAGE_COMPAT_BONUS = 0.03;
+export const MARRIAGE_REL_SCORE_BONUS = 0.0005;
+// Conception (relationship-weighted)
+export const CONCEPTION_BASE_NON_PARTNER = 0.0004;
+export const CONCEPTION_BASE_PARTNER = 0.01;
+export const CONCEPTION_BASE_MARRIED = 0.02;
+export const CONCEPTION_COMPAT_MULT_MAX = 1.5;
+export const CONCEPTION_DURATION_BONUS_PER_MONTH = 0.002;
+export const CONCEPTION_DURATION_MAX_MONTHS = 12;
 export const LEISURE_CONCEPTION_BOOST_MULT = 2.5;
 export const LEISURE_PARTNER_WAIT_TICKS = 25;        // 1 in-game hour
 // Proximity-based opportunistic socializing

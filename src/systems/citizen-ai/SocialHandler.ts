@@ -8,8 +8,9 @@ import {
   TAVERN_HAPPINESS_PER_TICK, TAVERN_VISIT_CHANCE,
   AI_TICK_INTERVAL,
   TRAIT_SOCIAL_CHANCE_MULT, TRAIT_HAPPINESS_GAIN_MULT,
+  REL_GAIN_SOCIAL_CHAT,
 } from '../../constants';
-import { getTraitMult } from './CitizenUtils';
+import { getTraitMult, incrementRelationship } from './CitizenUtils';
 
 export class SocialHandler {
   constructor(private game: Game, private nav: NavigationHelpers) {}
@@ -68,6 +69,7 @@ export class SocialHandler {
         needs.lastSocialTick = this.game.state.tick;
         const happyMult = getTraitMult(citizen, TRAIT_HAPPINESS_GAIN_MULT);
         needs.happiness = Math.min(100, needs.happiness + CHAT_HAPPINESS_GAIN * happyMult);
+        incrementRelationship(this.game.world, id, otherId, REL_GAIN_SOCIAL_CHAT);
         return true;
       }
     }

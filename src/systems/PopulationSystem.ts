@@ -1,15 +1,14 @@
 import type { Game } from '../Game';
 import { logger } from '../utils/Logger';
 import {
-  TICKS_PER_YEAR, CHILD_AGE, OLD_AGE, TILE_SIZE, Profession, CITIZEN_SPEED,
-  BuildingType, MAP_WIDTH, MAP_HEIGHT, TileType,
+  TICKS_PER_YEAR, TICKS_PER_DAY, CHILD_AGE, OLD_AGE, TILE_SIZE, Profession, CITIZEN_SPEED,
+  BuildingType, MAP_WIDTH, MAP_HEIGHT, TileType, MONTH, PersonalityTrait,
   NOMAD_DISEASE_CHANCE,
   NOMAD_SCATTER_RANGE, MARRIAGE_MIN_AGE, FERTILITY_MAX_AGE, MAX_CHILDREN_PER_COUPLE,
   OLD_AGE_DEATH_CHANCE_PER_YEAR, NEWBORN_NEEDS, ADULT_SPAWN_AGE_MIN,
   ADULT_SPAWN_AGE_MAX, FAMILY_CHECK_INTERVAL,
   INITIAL_RELATIONSHIP_SINGLE_SHARE, INITIAL_RELATIONSHIP_PARTNERED_SHARE, INITIAL_RELATIONSHIP_MARRIED_SHARE,
-  MARRIAGE_CHANCE_PARTNERED,
-  PREGNANCY_DURATION_TICKS, CONCEPTION_CHANCE_PARTNER, CONCEPTION_CHANCE_NON_PARTNER,
+  PREGNANCY_DURATION_TICKS,
   CHAPEL_WEDDING_HAPPINESS,
   IMMIGRATION_ROAD_SETTLEMENT_RADIUS, IMMIGRATION_SPAWN_SEARCH_RADIUS,
   IMMIGRATION_FOOD_PER_PERSON_PER_MONTH, IMMIGRATION_FOOD_MONTHS_TARGET,
@@ -25,6 +24,15 @@ import {
   ROAD_TRAVELER_MAX_ACTIVE, ROAD_TRAVELER_SPEED_MULT, ROAD_TRAVELER_MAX_LIFETIME,
   LEISURE_CONCEPTION_BOOST_MULT,
   EDUCATION_PROGRESS_NEEDED,
+  PARTNERSHIP_MIN_REL_SCORE, PARTNERSHIP_BASE_CHANCE, PARTNERSHIP_AGE_BONUS_PER_YEAR,
+  PARTNERSHIP_TRAIT_COMPAT_BONUS, PARTNERSHIP_EDUCATION_MATCH_BONUS, PARTNERSHIP_REL_SCORE_MULT,
+  BREAKUP_CHECK_INTERVAL, BREAKUP_BASE_CHANCE_PARTNER, BREAKUP_BASE_CHANCE_MARRIED,
+  BREAKUP_COMPAT_PENALTY, BREAKUP_TIME_REDUCTION_PER_MONTH, BREAKUP_MIN_CHANCE,
+  BREAKUP_HAPPINESS_PENALTY, BREAKUP_REL_SCORE_DROP,
+  MARRIAGE_MIN_PARTNERSHIP_TICKS, MARRIAGE_REQUIRES_CHAPEL,
+  MARRIAGE_BASE_CHANCE, MARRIAGE_COMPAT_BONUS, MARRIAGE_REL_SCORE_BONUS,
+  CONCEPTION_BASE_NON_PARTNER, CONCEPTION_BASE_PARTNER, CONCEPTION_BASE_MARRIED,
+  CONCEPTION_COMPAT_MULT_MAX, CONCEPTION_DURATION_BONUS_PER_MONTH, CONCEPTION_DURATION_MAX_MONTHS,
 } from '../constants';
 import type { PartnerPreference } from '../components/Citizen';
 import type { RelationshipStatus } from '../components/Family';
@@ -61,6 +69,16 @@ export class PopulationSystem {
       this.assignHomes();
       this.autoAssignWorkers();
       this.educateChildren();
+    }
+
+    // Couple cohabitation: check daily
+    if (this.tickCounter % TICKS_PER_DAY === 0) {
+      this.consolidateCoupleHousing();
+    }
+
+    // Breakup / divorce checks (monthly)
+    if (this.tickCounter % BREAKUP_CHECK_INTERVAL === 0) {
+      this.checkBreakups();
     }
 
     // Pregnancy progression runs every tick
@@ -179,31 +197,55 @@ export class PopulationSystem {
       }
     }
 
-    const shuffledSingles = this.game.rng.shuffle([...singles]);
-    const available = new Set<number>(shuffledSingles);
+    const paired = new Set<number>();
 
-    for (const firstId of shuffledSingles) {
-      if (!available.has(firstId)) continue;
-
-      let secondId: number | null = null;
-      for (const candidateId of shuffledSingles) {
-        if (candidateId === firstId) continue;
-        if (!available.has(candidateId)) continue;
-        if (!this.canFormPartnership(firstId, candidateId)) continue;
-        secondId = candidateId;
-        break;
-      }
-
-      if (secondId === null) continue;
-
+    for (const firstId of singles) {
+      if (paired.has(firstId)) continue;
       const firstFam = world.getComponent<any>(firstId, 'family');
-      const secondFam = world.getComponent<any>(secondId, 'family');
-      if (!firstFam || !secondFam) continue;
+      const firstCit = world.getComponent<any>(firstId, 'citizen');
+      if (!firstFam || !firstCit) continue;
+      const rels = firstFam.relationships as Record<number, number> | undefined;
+      if (!rels) continue;
 
-      this.linkPartners(firstId, secondId, 'partnered');
-      available.delete(firstId);
-      available.delete(secondId);
+      for (const otherIdStr of Object.keys(rels)) {
+        const otherId = Number(otherIdStr);
+        if (paired.has(otherId)) continue;
+        const relScore = rels[otherId] ?? 0;
+        if (relScore < PARTNERSHIP_MIN_REL_SCORE) continue;
+
+        const otherFam = world.getComponent<any>(otherId, 'family');
+        const otherCit = world.getComponent<any>(otherId, 'citizen');
+        if (!otherFam || !otherCit) continue;
+        if (otherFam.relationshipStatus !== 'single' || otherFam.partnerId !== null) continue;
+        if (otherCit.isChild || otherCit.age < MARRIAGE_MIN_AGE) continue;
+        if (!this.canFormPartnership(firstId, otherId)) continue;
+
+        // Compute weighted partnership chance
+        const ageDiff = Math.abs(firstCit.age - otherCit.age);
+        const ageBonus = PARTNERSHIP_AGE_BONUS_PER_YEAR * Math.max(0, 10 - ageDiff);
+        const traitBonus = this.countCompatibleTraitPairs(firstCit, otherCit) * PARTNERSHIP_TRAIT_COMPAT_BONUS;
+        const eduBonus = (firstCit.isEducated === otherCit.isEducated) ? PARTNERSHIP_EDUCATION_MATCH_BONUS : 0;
+        const chance = PARTNERSHIP_BASE_CHANCE + ageBonus + traitBonus + eduBonus + relScore * PARTNERSHIP_REL_SCORE_MULT;
+
+        if (this.game.rng.chance(chance)) {
+          this.linkPartners(firstId, otherId, 'partnered');
+          this.game.eventBus.emit('partnership', { partnerAId: firstId, partnerBId: otherId });
+          paired.add(firstId);
+          paired.add(otherId);
+          break; // stop after first successful pairing for this citizen
+        }
+      }
     }
+  }
+
+  private countCompatibleTraitPairs(citA: any, citB: any): number {
+    const traitsA: string[] = citA.traits || [];
+    const traitsB: string[] = citB.traits || [];
+    let count = 0;
+    for (const t of traitsA) {
+      if (traitsB.includes(t)) count++;
+    }
+    return count;
   }
 
   private advancePartneredCouplesToMarriage(): void {
@@ -232,9 +274,86 @@ export class PopulationSystem {
       visited.add(partnerId);
 
       if (partnerFamily.relationshipStatus !== 'partnered') continue;
-      if (!this.game.rng.chance(MARRIAGE_CHANCE_PARTNERED)) continue;
+
+      // Chapel check
+      if (MARRIAGE_REQUIRES_CHAPEL && !this.hasBuildingType(BuildingType.CHAPEL)) continue;
+
+      // Minimum partnership duration
+      const tick = this.game.state.tick;
+      if (family.partnershipStartTick != null && (tick - family.partnershipStartTick) < MARRIAGE_MIN_PARTNERSHIP_TICKS) continue;
+
+      // Weighted marriage chance
+      const compat = family.compatibility ?? 0.5;
+      const relScore = family.relationships?.[partnerId] ?? 0;
+      const marriageChance = MARRIAGE_BASE_CHANCE + MARRIAGE_COMPAT_BONUS * compat + MARRIAGE_REL_SCORE_BONUS * relScore;
+      if (!this.game.rng.chance(marriageChance)) continue;
 
       this.marryCouple(id, partnerId);
+    }
+  }
+
+  private checkBreakups(): void {
+    const families = this.game.world.getComponentStore<any>('family');
+    if (!families) return;
+
+    const visited = new Set<number>();
+    const tick = this.game.state.tick;
+
+    for (const [id, family] of families) {
+      if (visited.has(id)) continue;
+      if (family.relationshipStatus !== 'partnered' && family.relationshipStatus !== 'married') continue;
+
+      const partnerId = family.partnerId as number | null;
+      if (partnerId === null) continue;
+
+      const partnerFamily = this.game.world.getComponent<any>(partnerId, 'family');
+      if (!partnerFamily || partnerFamily.partnerId !== id) continue;
+
+      visited.add(id);
+      visited.add(partnerId);
+
+      const isMarried = family.relationshipStatus === 'married';
+      const compat = family.compatibility ?? 0.5;
+      const monthsTogether = (family.partnershipStartTick != null)
+        ? (tick - family.partnershipStartTick) / MONTH
+        : 0;
+
+      let chance = isMarried ? BREAKUP_BASE_CHANCE_MARRIED : BREAKUP_BASE_CHANCE_PARTNER;
+      if (compat < 0.5) {
+        chance += BREAKUP_COMPAT_PENALTY * Math.ceil((0.5 - compat) / 0.1);
+      }
+      chance -= BREAKUP_TIME_REDUCTION_PER_MONTH * monthsTogether;
+      chance = Math.max(BREAKUP_MIN_CHANCE, chance);
+
+      if (!this.game.rng.chance(chance)) continue;
+
+      // Break up
+      family.relationshipStatus = 'single';
+      family.partnerId = null;
+      family.partnershipStartTick = undefined;
+      family.compatibility = undefined;
+
+      partnerFamily.relationshipStatus = 'single';
+      partnerFamily.partnerId = null;
+      partnerFamily.partnershipStartTick = undefined;
+      partnerFamily.compatibility = undefined;
+
+      // Happiness penalty
+      const needsA = this.game.world.getComponent<any>(id, 'needs');
+      const needsB = this.game.world.getComponent<any>(partnerId, 'needs');
+      if (needsA) needsA.happiness = Math.max(0, needsA.happiness - BREAKUP_HAPPINESS_PENALTY);
+      if (needsB) needsB.happiness = Math.max(0, needsB.happiness - BREAKUP_HAPPINESS_PENALTY);
+
+      // Reduce relationship score
+      if (family.relationships) {
+        family.relationships[partnerId] = Math.max(0, (family.relationships[partnerId] ?? 0) - BREAKUP_REL_SCORE_DROP);
+      }
+      if (partnerFamily.relationships) {
+        partnerFamily.relationships[id] = Math.max(0, (partnerFamily.relationships[id] ?? 0) - BREAKUP_REL_SCORE_DROP);
+      }
+
+      const eventType = isMarried ? 'divorce' : 'breakup';
+      this.game.eventBus.emit(eventType, { partnerAId: id, partnerBId: partnerId });
     }
   }
 
@@ -261,6 +380,56 @@ export class PopulationSystem {
     familyB.partnerId = idA;
     familyA.relationshipStatus = status;
     familyB.relationshipStatus = status;
+
+    const tick = this.game.state.tick;
+    familyA.partnershipStartTick = tick;
+    familyB.partnershipStartTick = tick;
+
+    const compat = this.computeCompatibility(idA, idB);
+    familyA.compatibility = compat;
+    familyB.compatibility = compat;
+  }
+
+  private computeCompatibility(idA: number, idB: number): number {
+    const world = this.game.world;
+    const citA = world.getComponent<any>(idA, 'citizen');
+    const citB = world.getComponent<any>(idB, 'citizen');
+    if (!citA || !citB) return 0.5;
+
+    let compat = 0.5;
+
+    // Age proximity: +0.1 for same age, -0.01 per year of difference
+    const ageDiff = Math.abs(citA.age - citB.age);
+    compat += 0.1 - ageDiff * 0.01;
+
+    // Shared traits
+    const traitsA: string[] = citA.traits || [];
+    const traitsB: string[] = citB.traits || [];
+    for (const t of traitsA) {
+      if (traitsB.includes(t)) compat += 0.05;
+    }
+
+    // Opposing traits
+    const opposingPairs: [string, string][] = [
+      [PersonalityTrait.HARDWORKING, PersonalityTrait.LAZY],
+      [PersonalityTrait.SHY, PersonalityTrait.ADVENTUROUS],
+    ];
+    for (const [a, b] of opposingPairs) {
+      if ((traitsA.includes(a) && traitsB.includes(b)) || (traitsA.includes(b) && traitsB.includes(a))) {
+        compat -= 0.1;
+      }
+    }
+
+    // Complementary traits
+    if ((traitsA.includes(PersonalityTrait.CHEERFUL) && traitsB.includes(PersonalityTrait.ADVENTUROUS))
+      || (traitsA.includes(PersonalityTrait.ADVENTUROUS) && traitsB.includes(PersonalityTrait.CHEERFUL))) {
+      compat += 0.05;
+    }
+
+    // Education match
+    if (citA.isEducated === citB.isEducated) compat += 0.05;
+
+    return Math.max(0, Math.min(1, compat));
   }
 
   private marryCouple(idA: number, idB: number): void {
@@ -274,7 +443,138 @@ export class PopulationSystem {
       if (secondNeeds) secondNeeds.happiness = Math.min(100, secondNeeds.happiness + CHAPEL_WEDDING_HAPPINESS);
     }
 
+    this.assignNewlywedsHousing(idA, idB);
     this.game.eventBus.emit('wedding', { partnerAId: idA, partnerBId: idB });
+  }
+
+  private assignNewlywedsHousing(idA: number, idB: number): void {
+    const world = this.game.world;
+    const famA = world.getComponent<any>(idA, 'family');
+    const famB = world.getComponent<any>(idB, 'family');
+    if (!famA || !famB) return;
+
+    // Already sharing a house
+    if (famA.homeId !== null && famA.homeId === famB.homeId) return;
+
+    const houses = world.getComponentStore<any>('house');
+    if (!houses) return;
+
+    // Try finding an empty house or a house with 2+ free slots
+    for (const [houseId, house] of houses) {
+      const bld = world.getComponent<any>(houseId, 'building');
+      if (!bld?.completed) continue;
+      const maxResidents = house.maxResidents || 5;
+      const freeSlots = maxResidents - (house.residents?.length || 0);
+      if (freeSlots < 2) continue;
+
+      // Move both in
+      this.moveToHouse(idA, famA, houseId, house);
+      this.moveToHouse(idB, famB, houseId, house);
+      return;
+    }
+
+    // If one has a house with a free slot, move the other in
+    if (famA.homeId !== null) {
+      const house = world.getComponent<any>(famA.homeId, 'house');
+      if (house) {
+        const maxResidents = house.maxResidents || 5;
+        if ((house.residents?.length || 0) < maxResidents) {
+          this.moveToHouse(idB, famB, famA.homeId, house);
+          return;
+        }
+      }
+    }
+    if (famB.homeId !== null) {
+      const house = world.getComponent<any>(famB.homeId, 'house');
+      if (house) {
+        const maxResidents = house.maxResidents || 5;
+        if ((house.residents?.length || 0) < maxResidents) {
+          this.moveToHouse(idA, famA, famB.homeId, house);
+          return;
+        }
+      }
+    }
+    // Fallback: leave as-is, normal assignHomes() handles it
+  }
+
+  /** Periodically try to move couples into their own home or at least the same home. */
+  private consolidateCoupleHousing(): void {
+    const world = this.game.world;
+    const families = world.getComponentStore<any>('family');
+    const houses = world.getComponentStore<any>('house');
+    if (!families || !houses) return;
+
+    const visited = new Set<number>();
+
+    for (const [id, fam] of families) {
+      if (visited.has(id)) continue;
+      if (fam.relationshipStatus !== 'partnered' && fam.relationshipStatus !== 'married') continue;
+      const partnerId = fam.partnerId as number | null;
+      if (partnerId === null) continue;
+
+      const partnerFam = world.getComponent<any>(partnerId, 'family');
+      if (!partnerFam || partnerFam.partnerId !== id) continue;
+
+      visited.add(id);
+      visited.add(partnerId);
+
+      // Already sharing a home
+      if (fam.homeId !== null && fam.homeId === partnerFam.homeId) continue;
+
+      // Priority 1: move both into an empty home
+      let moved = false;
+      for (const [houseId, house] of houses) {
+        const bld = world.getComponent<any>(houseId, 'building');
+        if (!bld?.completed) continue;
+        if (!Array.isArray(house.residents)) house.residents = [];
+        if (house.residents.length !== 0) continue;
+        const maxRes = house.maxResidents || 5;
+        if (maxRes < 2) continue;
+
+        this.moveToHouse(id, fam, houseId, house);
+        this.moveToHouse(partnerId, partnerFam, houseId, house);
+        moved = true;
+        break;
+      }
+      if (moved) continue;
+
+      // Priority 2: move one into the other's home if there's a free slot
+      if (fam.homeId !== null) {
+        const house = world.getComponent<any>(fam.homeId, 'house');
+        if (house) {
+          const maxRes = house.maxResidents || 5;
+          if ((house.residents?.length || 0) < maxRes) {
+            this.moveToHouse(partnerId, partnerFam, fam.homeId, house);
+            continue;
+          }
+        }
+      }
+      if (partnerFam.homeId !== null) {
+        const house = world.getComponent<any>(partnerFam.homeId, 'house');
+        if (house) {
+          const maxRes = house.maxResidents || 5;
+          if ((house.residents?.length || 0) < maxRes) {
+            this.moveToHouse(id, fam, partnerFam.homeId, house);
+            continue;
+          }
+        }
+      }
+    }
+  }
+
+  private moveToHouse(citizenId: number, family: any, houseId: number, house: any): void {
+    // Remove from old house
+    if (family.homeId !== null && family.homeId !== houseId) {
+      const oldHouse = this.game.world.getComponent<any>(family.homeId, 'house');
+      if (oldHouse?.residents) {
+        oldHouse.residents = oldHouse.residents.filter((r: number) => r !== citizenId);
+      }
+    }
+    family.homeId = houseId;
+    if (!house.residents) house.residents = [];
+    if (!house.residents.includes(citizenId)) {
+      house.residents.push(citizenId);
+    }
   }
 
   private applyMarriageSurnameRules(idA: number, idB: number): void {
@@ -353,6 +653,7 @@ export class PopulationSystem {
   private checkConception(): void {
     const world = this.game.world;
     const citizens = world.query('citizen', 'family');
+    const tick = this.game.state.tick;
 
     for (const femaleId of citizens) {
       const female = world.getComponent<any>(femaleId, 'citizen')!;
@@ -374,27 +675,45 @@ export class PopulationSystem {
       const candidateMaleIds = this.findEligibleMaleConceptionCandidates(femaleId, fam.homeId);
       if (candidateMaleIds.length === 0) continue;
 
-      const partnerId = fam.partnerId !== null && candidateMaleIds.includes(fam.partnerId)
-        ? fam.partnerId
-        : null;
+      // Crowded house penalty: more residents = less privacy
+      const house = world.getComponent<any>(fam.homeId, 'house');
+      const residentCount = house?.residents?.length || 1;
+      const crowdedDiv = Math.max(1, residentCount - 1); // 2 residents = /1, 3 = /2, 4 = /3, etc.
 
-      // Try with partner first when possible.
-      // Couples who spent leisure time together get a conception boost.
-      const partnerCit = partnerId !== null ? world.getComponent<any>(partnerId, 'citizen') : null;
+      // Leisure boost: couples who spent leisure time together get a conception boost
       const femaleLeisure = female.hadLeisureWithPartner === true;
-      const leisureMult = (femaleLeisure && partnerCit?.hadLeisureWithPartner === true)
-        ? LEISURE_CONCEPTION_BOOST_MULT : 1.0;
-      if (partnerId !== null && this.game.rng.chance(CONCEPTION_CHANCE_PARTNER * leisureMult)) {
-        this.beginPregnancy(femaleId, fam, partnerId);
-        continue;
-      }
 
-      // Non-partner conception remains possible but intentionally rare.
-      const nonPartnerCandidates = candidateMaleIds.filter(id => id !== partnerId);
-      if (nonPartnerCandidates.length === 0) continue;
-      const maleId = this.game.rng.pick(nonPartnerCandidates);
-      if (this.game.rng.chance(CONCEPTION_CHANCE_NON_PARTNER)) {
-        this.beginPregnancy(femaleId, fam, maleId);
+      let conceived = false;
+      for (const maleId of candidateMaleIds) {
+        if (conceived) break;
+
+        const isPartner = fam.partnerId === maleId;
+        const isMarried = isPartner && fam.relationshipStatus === 'married';
+
+        let chance: number;
+        if (isPartner) {
+          const base = isMarried ? CONCEPTION_BASE_MARRIED : CONCEPTION_BASE_PARTNER;
+          const compat = fam.compatibility ?? 0.5;
+          const compatMult = 1 + compat * (CONCEPTION_COMPAT_MULT_MAX - 1);
+          const monthsTogether = (fam.partnershipStartTick != null)
+            ? (tick - fam.partnershipStartTick) / MONTH : 0;
+          const durationBonus = CONCEPTION_DURATION_BONUS_PER_MONTH
+            * Math.min(monthsTogether, CONCEPTION_DURATION_MAX_MONTHS);
+          const maleCit = world.getComponent<any>(maleId, 'citizen');
+          const leisureMult = (femaleLeisure && maleCit?.hadLeisureWithPartner === true)
+            ? LEISURE_CONCEPTION_BOOST_MULT : 1.0;
+          chance = (base * compatMult + durationBonus) * leisureMult;
+        } else {
+          chance = CONCEPTION_BASE_NON_PARTNER;
+        }
+
+        // Divide by crowdedness (couple alone = no penalty)
+        chance /= crowdedDiv;
+
+        if (this.game.rng.chance(chance)) {
+          this.beginPregnancy(femaleId, fam, maleId);
+          conceived = true;
+        }
       }
     }
   }

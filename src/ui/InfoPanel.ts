@@ -1,5 +1,5 @@
 import type { Game } from '../Game';
-import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL, TRIMESTER_1_END, TRIMESTER_2_END, PREGNANCY_DURATION_TICKS, DEMOLITION_RECLAIM_RATIO } from '../constants';
+import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL, TRIMESTER_1_END, TRIMESTER_2_END, PREGNANCY_DURATION_TICKS, DEMOLITION_RECLAIM_RATIO, MONTH, YEAR, REL_MAX } from '../constants';
 import { Settings } from '../Settings';
 import { EntityId } from '../types';
 import { estimateStorageContentsForBuilding } from '../utils/StorageContents';
@@ -270,6 +270,17 @@ export class InfoPanel {
         const progressPct = Math.min(100, (ticks / PREGNANCY_DURATION_TICKS) * 100);
         this.drawBar(ctx, leftX, textY, w - 20, 'Preg.', progressPct, trimesterColor);
         textY += 18;
+
+        // Father
+        if (familyEarly.pregnancyPartnerId != null && world.entityExists(familyEarly.pregnancyPartnerId)) {
+          const father = world.getComponent<any>(familyEarly.pregnancyPartnerId, 'citizen');
+          ctx.font = '12px monospace';
+          ctx.fillStyle = '#cccccc';
+          const fatherLabelW = ctx.measureText('Father: ').width;
+          ctx.fillText('Father: ', leftX, textY);
+          this.drawLink(ctx, father?.name || 'Unknown', leftX + fatherLabelW, textY, familyEarly.pregnancyPartnerId);
+          textY += 16;
+        }
       }
 
       // Diet info
@@ -392,6 +403,27 @@ export class InfoPanel {
           ctx.fillText('Partner: ', leftX, textY);
           this.drawLink(ctx, partner?.name || 'Unknown', leftX + labelW, textY, family.partnerId);
           textY += 16;
+
+          // Compatibility
+          if (family.compatibility != null) {
+            ctx.fillStyle = '#aaaaaa';
+            ctx.fillText(`Compatibility: ${Math.round(family.compatibility * 100)}%`, leftX, textY);
+            textY += 16;
+          }
+
+          // Duration together
+          if (family.partnershipStartTick != null) {
+            const elapsed = this.game.state.tick - family.partnershipStartTick;
+            const months = Math.floor(elapsed / MONTH);
+            const years = Math.floor(months / 12);
+            const remMonths = months % 12;
+            const prefix = family.relationshipStatus === 'married' ? 'Married' : 'Together';
+            const duration = years > 0
+              ? `${years}y ${remMonths}m`
+              : `${remMonths}m`;
+            ctx.fillText(`${prefix}: ${duration}`, leftX, textY);
+            textY += 16;
+          }
         }
         if (family.childrenIds.length > 0) {
           ctx.fillStyle = '#cccccc';
@@ -425,6 +457,54 @@ export class InfoPanel {
           ctx.fillText('Home: ', leftX, textY);
           this.drawLink(ctx, homeLabel, leftX + hw, textY, family.homeId);
           textY += 16;
+        }
+
+        // Top relationships
+        const rels = family.relationships as Record<number, number> | undefined;
+        if (rels) {
+          const sorted = Object.entries(rels)
+            .map(([eid, score]) => ({ id: Number(eid), score: score as number }))
+            .filter(e => world.entityExists(e.id) && e.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5);
+
+          if (sorted.length > 0) {
+            ctx.font = '11px monospace';
+            ctx.fillStyle = '#999999';
+            ctx.fillText('Relationships', leftX, textY);
+            textY += 14;
+
+            const barMaxW = INFO_PANEL_WIDTH - 30 - 8; // available width for name + bar
+            for (const entry of sorted) {
+              const other = world.getComponent<any>(entry.id, 'citizen');
+              const name = other?.name || '?';
+
+              // Draw clickable name
+              ctx.font = '11px monospace';
+              const nameW = this.drawLink(ctx, name, leftX, textY, entry.id);
+
+              // Draw score bar after the name
+              const barX = leftX + nameW + 6;
+              const barW = Math.max(0, barMaxW - nameW - 6);
+              const fillW = barW * (entry.score / REL_MAX);
+
+              // Bar background
+              ctx.fillStyle = '#333333';
+              ctx.fillRect(barX, textY - 8, barW, 8);
+              // Bar fill — colour shifts from grey to green to gold
+              const pct = entry.score / REL_MAX;
+              ctx.fillStyle = pct >= 0.6 ? '#88cc55' : pct >= 0.3 ? '#aabb66' : '#888888';
+              ctx.fillRect(barX, textY - 8, fillW, 8);
+
+              // Score text
+              ctx.fillStyle = '#cccccc';
+              ctx.font = '10px monospace';
+              const scoreStr = Math.round(entry.score).toString();
+              ctx.fillText(scoreStr, barX + barW + 3, textY);
+
+              textY += 14;
+            }
+          }
         }
       }
 

@@ -4,7 +4,9 @@ import {
   SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL,
   TRAIT_WORK_SPEED_BONUS, COOKED_FOOD_TYPES,
   AI_TICK_INTERVAL,
+  REL_GAIN_RANDOM_RANGE, REL_MAX,
 } from '../../constants';
+import type { World } from '../../ecs/World';
 
 /** Building types that use the physical gather-carry-deposit cycle */
 export const GATHER_BUILDING_TYPES = new Set<string>([
@@ -122,6 +124,22 @@ export function getWorkerSkillLevel(worker: any): number {
   const skillType = PROFESSION_SKILL_MAP[worker.profession];
   if (!skillType || !worker.skills?.[skillType]) return 0;
   return worker.skills[skillType].level;
+}
+
+/** Increment relationship score between two citizens */
+export function incrementRelationship(world: World, idA: number, idB: number, baseAmount: number): void {
+  const famA = world.getComponent<any>(idA, 'family');
+  const famB = world.getComponent<any>(idB, 'family');
+  if (!famA || !famB) return;
+
+  if (!famA.relationships) famA.relationships = {};
+  if (!famB.relationships) famB.relationships = {};
+
+  const variance = 1 + (Math.random() * 2 - 1) * REL_GAIN_RANDOM_RANGE;
+  const gain = baseAmount * variance;
+
+  famA.relationships[idB] = Math.min(REL_MAX, (famA.relationships[idB] ?? 0) + gain);
+  famB.relationships[idA] = Math.min(REL_MAX, (famB.relationships[idA] ?? 0) + gain);
 }
 
 /** Get trait-based work speed bonus for a single citizen */
