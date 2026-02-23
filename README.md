@@ -20,9 +20,32 @@ npm run build
 npm run preview
 ```
 
+## Gameplay Manual (Web Pages)
+
+The game ships with a gameplay manual site at:
+
+- `manual/index.html` (overview)
+- `manual/buildings.html`
+- `manual/resources.html`
+- `manual/mechanics.html`
+
+In-game access: open the pause menu (`Escape`) and click **Gameplay Manual**. It opens in a new browser tab.
+
+### Manual Update Policy
+
+When gameplay values or systems change, update the manual pages in `public/manual/` in the same PR.
+At minimum, review manual accuracy after edits to:
+
+- `src/constants.ts`
+- `src/data/BuildingDefs.ts`
+- `src/data/ResourceDefs.ts`
+- `src/data/RecipeDefs.ts`
+- `src/data/SeasonDefs.ts`
+- `src/systems/*` (for formula/logic changes)
+
 ## How to Play
 
-You start with 5 adults, 2 children, and a modest stockpile of resources (150 logs, 50 stone, 300 food, and basic supplies). Place buildings, assign workers, and manage food and firewood to keep your settlement alive through the seasons.
+You start with 20 adults, 2 children, and a stockpile of resources (150 logs, 50 stone, 20 iron, 8 tools, 7 coats, 80 firewood, 200 berries, 100 roots, 50 venison). Place buildings, assign workers, and manage food and firewood to keep your settlement alive through the seasons.
 
 There is no win condition — it's a sandbox survival game. The challenge is avoiding the **death spiral**: resource shortages lead to deaths, which mean fewer workers, which deepens the shortage.
 
@@ -61,16 +84,16 @@ There is no win condition — it's a sandbox survival game. The challenge is avo
 - **Personality traits** — hardworking, lazy, cheerful, shy, adventurous (1-2 per citizen, affect work speed, socializing, and happiness)
 - **Skill progression** — citizens gain XP in their profession's skill (farming, forestry, cooking, etc.), leveling up to 5 for +5% efficiency per level; mastery grants bonus output
 
-### 24 Building Types
+### 27 Building Types
 
 | Category | Buildings |
 |----------|-----------|
 | Housing | Wooden House |
 | Storage | Storage Barn, Stockpile |
 | Food | Crop Field, Gathering Hut, Hunting Cabin, Fishing Dock, Bakery, Chicken Coop, Pasture |
-| Resource | Forester Lodge, Wood Cutter, Blacksmith, Tailor, Dairy |
+| Resource | Forester Lodge, Wood Cutter, Blacksmith, Tailor, Dairy, Stone Quarry, Iron Mine |
 | Services | Herbalist, Market, School, Trading Post, Town Hall, Tavern, Well, Chapel |
-| Infrastructure | Road |
+| Infrastructure | Road, Wooden Bridge |
 
 ### 27 Resource Types
 - **Raw:** Log, Stone, Iron

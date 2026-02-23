@@ -1,4 +1,4 @@
-import { BuildingType, BuildingCategory } from '../constants';
+import { BuildingType, BuildingCategory, ROAD_CONSTRUCTION_WORK, BRIDGE_CONSTRUCTION_WORK } from '../constants';
 import { BuildingDef } from '../types';
 
 // constructionWork determines build time: ticks = constructionWork / (workers * 0.03)
@@ -15,6 +15,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     residents: 5,
     description: 'A warm wooden house. Shelters up to 5 residents.',
     doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradesTo: BuildingType.STONE_HOUSE,
+    upgradeCostLog: 10, upgradeCostStone: 40, upgradeCostIron: 8,
+    upgradeWork: 200,
   },
   [BuildingType.STORAGE_BARN]: {
     type: BuildingType.STORAGE_BARN,
@@ -27,6 +30,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     isStorage: true, storageCapacity: 6000,
     description: 'Stores food and goods. Reduces spoilage. Capacity: 6000.',
     doorDef: { dx: 2, dy: 3, side: 'south' },
+    upgradesTo: BuildingType.STONE_BARN,
+    upgradeCostLog: 0, upgradeCostStone: 60, upgradeCostIron: 16,
+    upgradeWork: 250,
   },
   [BuildingType.STOCKPILE]: {
     type: BuildingType.STOCKPILE,
@@ -63,6 +69,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     requiresForest: true,
     description: 'Gathers berries, mushrooms, and roots from nearby forest. 4 workers.',
     doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradesTo: BuildingType.GATHERING_LODGE,
+    upgradeCostLog: 20, upgradeCostStone: 24, upgradeCostIron: 0,
+    upgradeWork: 180,
   },
   [BuildingType.HUNTING_CABIN]: {
     type: BuildingType.HUNTING_CABIN,
@@ -74,6 +83,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 150,       // 5 workers → 13h, 2 workers → 1.4d
     description: 'Hunts deer for venison and leather. 3 workers.',
     doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradesTo: BuildingType.HUNTING_LODGE,
+    upgradeCostLog: 28, upgradeCostStone: 20, upgradeCostIron: 0,
+    upgradeWork: 180,
   },
   [BuildingType.FISHING_DOCK]: {
     type: BuildingType.FISHING_DOCK,
@@ -97,6 +109,10 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 150,       // 5 workers → 13h
     description: 'Plants and harvests trees for logs. 4 workers.',
     doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradesTo: BuildingType.FORESTRY_HALL,
+    upgradeCostLog: 40, upgradeCostStone: 28, upgradeCostIron: 0,
+    upgradeWork: 220,
+    upgradeSizeW: 4, upgradeSizeH: 4,
   },
   [BuildingType.WOOD_CUTTER]: {
     type: BuildingType.WOOD_CUTTER,
@@ -108,6 +124,10 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 100,       // 5 workers → 9h, 1 worker → 1.9d
     description: 'Converts logs into firewood. 1 worker.',
     doorDef: { dx: 1, dy: 1, side: 'south' },
+    upgradesTo: BuildingType.SAWMILL,
+    upgradeCostLog: 30, upgradeCostStone: 20, upgradeCostIron: 12,
+    upgradeWork: 200,
+    upgradeSizeW: 3, upgradeSizeH: 3,
   },
   [BuildingType.BLACKSMITH]: {
     type: BuildingType.BLACKSMITH,
@@ -119,6 +139,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 350,       // 5 workers → 1.3d, 2 workers → 3.2d
     description: 'Forges tools from iron and logs. 1 worker.',
     doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradesTo: BuildingType.IRON_WORKS,
+    upgradeCostLog: 30, upgradeCostStone: 40, upgradeCostIron: 50,
+    upgradeWork: 300,
   },
   [BuildingType.TAILOR]: {
     type: BuildingType.TAILOR,
@@ -163,6 +186,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 600,       // 5 workers → 2.2d, 2 workers → 5.6d
     description: 'Educates children. Educated workers produce +50%. 1 teacher.',
     doorDef: { dx: 2, dy: 3, side: 'south' },
+    upgradesTo: BuildingType.ACADEMY,
+    upgradeCostLog: 40, upgradeCostStone: 80, upgradeCostIron: 40,
+    upgradeWork: 600,
   },
   [BuildingType.TRADING_POST]: {
     type: BuildingType.TRADING_POST,
@@ -183,8 +209,32 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     width: 1, height: 1,
     costLog: 1, costStone: 0, costIron: 0,
     maxWorkers: 0, workRadius: 0,
-    constructionWork: 5,         // nearly instant
+    constructionWork: ROAD_CONSTRUCTION_WORK,
+    blocksMovement: false,
     description: 'Citizens walk 2x faster on roads. Cheap to build.',
+  },
+  [BuildingType.STONE_ROAD]: {
+    type: BuildingType.STONE_ROAD,
+    name: 'Stone Road',
+    category: BuildingCategory.INFRASTRUCTURE,
+    width: 1, height: 1,
+    costLog: 0, costStone: 2, costIron: 0,
+    maxWorkers: 0, workRadius: 0,
+    constructionWork: 60,
+    blocksMovement: false,
+    upgradeFrom: BuildingType.ROAD,
+    description: 'Citizens walk 3x faster on stone roads. Can be placed over dirt roads.',
+  },
+  [BuildingType.BRIDGE]: {
+    type: BuildingType.BRIDGE,
+    name: 'Wooden Bridge',
+    category: BuildingCategory.INFRASTRUCTURE,
+    width: 1, height: 1,
+    costLog: 3, costStone: 2, costIron: 0,
+    maxWorkers: 0, workRadius: 0,
+    constructionWork: BRIDGE_CONSTRUCTION_WORK,
+    blocksMovement: false,
+    description: 'Allows citizens to cross water. Drag to span a river.',
   },
   [BuildingType.BAKERY]: {
     type: BuildingType.BAKERY,
@@ -250,6 +300,9 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     maxWorkers: 0, workRadius: 15,
     constructionWork: 100,       // 5 workers → 9h
     description: 'Decorative. Passively boosts happiness for citizens within 15 tiles.',
+    upgradesTo: BuildingType.STONE_WELL,
+    upgradeCostLog: 0, upgradeCostStone: 50, upgradeCostIron: 4,
+    upgradeWork: 150,
   },
   [BuildingType.CHAPEL]: {
     type: BuildingType.CHAPEL,
@@ -272,5 +325,140 @@ export const BUILDING_DEFS: Record<string, BuildingDef> = {
     constructionWork: 800,       // 5 workers → 3d (major community building)
     description: 'The heart of the village. Unlocks seasonal festivals that boost morale and grant bonuses.',
     doorDef: { dx: 2, dy: 4, side: 'south' },
+  },
+  [BuildingType.QUARRY]: {
+    type: BuildingType.QUARRY,
+    name: 'Stone Quarry',
+    category: BuildingCategory.RESOURCE,
+    width: 4, height: 3,
+    costLog: 40, costStone: 0, costIron: 0,
+    maxWorkers: 3, workRadius: 20,
+    constructionWork: 300,       // 5 workers → 1.1d
+    description: 'Miners quarry visible stone deposits nearby, then dig underground when the surface is exhausted. 3 workers.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+  },
+  [BuildingType.MINE]: {
+    type: BuildingType.MINE,
+    name: 'Iron Mine',
+    category: BuildingCategory.RESOURCE,
+    width: 4, height: 4,
+    costLog: 60, costStone: 30, costIron: 0,
+    maxWorkers: 3, workRadius: 20,
+    constructionWork: 450,       // 5 workers → 1.7d
+    description: 'Miners extract iron from visible deposits then dig underground veins. 3 workers.',
+    doorDef: { dx: 1, dy: 3, side: 'south' },
+  },
+
+  // ── Tier-2 Upgraded Buildings (upgrade-only; costLog/Stone/Iron = 0 means cannot be built fresh) ──
+
+  [BuildingType.STONE_HOUSE]: {
+    type: BuildingType.STONE_HOUSE,
+    name: 'Stone House',
+    category: BuildingCategory.HOUSING,
+    width: 3, height: 3,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 0, workRadius: 0,
+    constructionWork: 0,
+    residents: 7,
+    description: 'A sturdy stone house. Shelters up to 7 residents with better warmth retention.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradeFrom: BuildingType.WOODEN_HOUSE,
+  },
+  [BuildingType.STONE_BARN]: {
+    type: BuildingType.STONE_BARN,
+    name: 'Stone Barn',
+    category: BuildingCategory.STORAGE,
+    width: 4, height: 4,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 0, workRadius: 0,
+    constructionWork: 0,
+    isStorage: true, storageCapacity: 10000,
+    description: 'Stone-walled barn. 10 000 capacity with superior spoilage protection.',
+    doorDef: { dx: 2, dy: 3, side: 'south' },
+    upgradeFrom: BuildingType.STORAGE_BARN,
+  },
+  [BuildingType.GATHERING_LODGE]: {
+    type: BuildingType.GATHERING_LODGE,
+    name: 'Gathering Lodge',
+    category: BuildingCategory.FOOD,
+    width: 3, height: 3,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 6, workRadius: 40,
+    constructionWork: 0,
+    requiresForest: true,
+    description: 'Upgraded gathering hut. 6 workers, wider 40-tile radius.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradeFrom: BuildingType.GATHERING_HUT,
+  },
+  [BuildingType.HUNTING_LODGE]: {
+    type: BuildingType.HUNTING_LODGE,
+    name: 'Hunting Lodge',
+    category: BuildingCategory.FOOD,
+    width: 3, height: 3,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 5, workRadius: 40,
+    constructionWork: 0,
+    description: 'Upgraded hunting cabin. 5 hunters, 40-tile radius.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradeFrom: BuildingType.HUNTING_CABIN,
+  },
+  [BuildingType.FORESTRY_HALL]: {
+    type: BuildingType.FORESTRY_HALL,
+    name: 'Forestry Hall',
+    category: BuildingCategory.RESOURCE,
+    width: 4, height: 4,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 6, workRadius: 40,
+    constructionWork: 0,
+    description: 'Upgraded forester lodge. 6 workers, 40-tile radius, larger 4×4 footprint.',
+    doorDef: { dx: 1, dy: 3, side: 'south' },
+    upgradeFrom: BuildingType.FORESTER_LODGE,
+  },
+  [BuildingType.SAWMILL]: {
+    type: BuildingType.SAWMILL,
+    name: 'Sawmill',
+    category: BuildingCategory.RESOURCE,
+    width: 3, height: 3,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 2, workRadius: 0,
+    constructionWork: 0,
+    description: 'Upgraded wood cutter. 2 workers, yields 9 firewood per log. Larger 3×3 footprint.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradeFrom: BuildingType.WOOD_CUTTER,
+  },
+  [BuildingType.IRON_WORKS]: {
+    type: BuildingType.IRON_WORKS,
+    name: 'Iron Works',
+    category: BuildingCategory.RESOURCE,
+    width: 3, height: 3,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 2, workRadius: 0,
+    constructionWork: 0,
+    description: 'Upgraded blacksmith. 2 smiths with faster tool production.',
+    doorDef: { dx: 1, dy: 2, side: 'south' },
+    upgradeFrom: BuildingType.BLACKSMITH,
+  },
+  [BuildingType.STONE_WELL]: {
+    type: BuildingType.STONE_WELL,
+    name: 'Stone Well',
+    category: BuildingCategory.SERVICES,
+    width: 2, height: 2,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 0, workRadius: 25,
+    constructionWork: 0,
+    description: 'Upgraded well. 25-tile radius, doubles happiness aura.',
+    upgradeFrom: BuildingType.WELL,
+  },
+  [BuildingType.ACADEMY]: {
+    type: BuildingType.ACADEMY,
+    name: 'Academy',
+    category: BuildingCategory.SERVICES,
+    width: 4, height: 4,
+    costLog: 0, costStone: 0, costIron: 0,
+    maxWorkers: 2, workRadius: 0,
+    constructionWork: 0,
+    description: 'Upgraded school. 2 teachers, educated workers produce +75% instead of +50%.',
+    doorDef: { dx: 2, dy: 3, side: 'south' },
+    upgradeFrom: BuildingType.SCHOOL,
   },
 };

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Buildings — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">
+      <h1>Buildings</h1>
+      <p>All structures you can build in Exiled. Click any building for full details including costs, build times, recipes, and upgrade paths.</p>
+    </div>
+
+    <div class="filters" id="filters"></div>
+
+    <div class="note" id="tier2-note" style="display:none;">
+      Tier 2 buildings cannot be built directly — they are <a href="mechanics.html#upgrades">upgraded</a> from their base versions.
+    </div>
+
+    <div class="grid" id="building-grid"></div>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    const categories = ['All', 'Housing', 'Storage', 'Food', 'Resource', 'Services', 'Infrastructure'];
+    const filtersEl = document.getElementById('filters');
+    const gridEl = document.getElementById('building-grid');
+    const tier2Note = document.getElementById('tier2-note');
+
+    let activeFilter = 'All';
+
+    // Check URL for category filter
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('cat') && categories.includes(params.get('cat'))) {
+      activeFilter = params.get('cat');
+    }
+
+    // Render filter buttons
+    categories.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.textContent = cat;
+      btn.className = cat === activeFilter ? 'active' : '';
+      btn.addEventListener('click', () => {
+        activeFilter = cat;
+        filtersEl.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderGrid();
+      });
+      filtersEl.appendChild(btn);
+    });
+
+    function renderGrid() {
+      gridEl.innerHTML = '';
+      const filtered = ManualData.buildings.filter(b => {
+        if (activeFilter === 'All') return true;
+        return b.category === activeFilter;
+      });
+
+      // Show tier-2 note when filtered list includes tier-2 buildings
+      const hasTier2 = filtered.some(b => b.isTier2);
+      tier2Note.style.display = hasTier2 ? 'block' : 'none';
+
+      // Sort: base buildings first, then tier 2
+      filtered.sort((a, b) => {
+        if (a.isTier2 && !b.isTier2) return 1;
+        if (!a.isTier2 && b.isTier2) return -1;
+        return 0;
+      });
+
+      filtered.forEach(bld => {
+        const card = document.createElement('a');
+        card.href = `building.html?id=${bld.id}`;
+        card.className = 'card building-card';
+
+        const catColor = ManualData.categoryColors[bld.category] || '#888';
+        const cost = ManualData.formatCost(bld.cost || {});
+
+        const meta = [];
+        if (bld.flexible) {
+          meta.push(`${bld.minSize[0]}–${bld.maxSize[0]}`);
+        } else {
+          meta.push(`${bld.size[0]}×${bld.size[1]}`);
+        }
+        if (bld.workers > 0) meta.push(`${bld.workers} worker${bld.workers > 1 ? 's' : ''}`);
+        if (bld.residents) meta.push(`${bld.residents} residents`);
+        if (bld.storageCapacity) meta.push(`${bld.storageCapacity.toLocaleString()} cap`);
+        if (bld.radius > 0) meta.push(`${bld.radius}-tile radius`);
+
+        card.innerHTML = `
+          <div class="card-head">
+            <div class="card-icon" style="background:${catColor}">
+              ${bld.size[0]}×${bld.size[1]}
+            </div>
+            <div>
+              <h3>${bld.name}</h3>
+              <div class="chip-row">
+                <span class="chip chip-category" style="color:${catColor};border-color:${catColor}">${bld.category}</span>
+                ${bld.isTier2 ? '<span class="chip chip-tier2">Tier 2</span>' : ''}
+              </div>
+            </div>
+          </div>
+          <div class="card-body">${bld.description}</div>
+          <div class="card-meta">
+            <span>${bld.isTier2 ? 'Upgrade' : cost}</span>
+            ${meta.map(m => `<span>${m}</span>`).join('')}
+          </div>
+        `;
+
+        gridEl.appendChild(card);
+      });
+    }
+
+    renderGrid();
+  </script>
+</body>
+</html>

@@ -23,13 +23,16 @@ import {
   T3_FOOD_DECAY_MULT, T3_ENERGY_DECAY_MULT, T3_SPEED_MULT,
   MIDSUMMER_HAPPINESS_MULT,
   WELL_HAPPINESS_RADIUS, WELL_HAPPINESS_PER_TICK,
+  STONE_WELL_HAPPINESS_RADIUS, STONE_WELL_HAPPINESS_PER_TICK,
   CHAPEL_COMMUNITY_HAPPINESS, BuildingType,
+  HEATED_BUILDING_TYPES, HEATED_BUILDING_WARMTH_THRESHOLD,
+  HEATED_BUILDING_DECAY_MULT, HEATED_BUILDING_WARMTH_RECOVERY,
 } from '../constants';
 
 export class NeedsSystem {
   private game: Game;
   private hasChapel = false;
-  private wellPositions: Array<{ x: number; y: number; radius: number }> = [];
+  private wellPositions: Array<{ x: number; y: number; radius: number; happinessPerTick: number }> = [];
   private socialBuildingCacheAge = 0;
 
   constructor(game: Game) {
@@ -129,6 +132,16 @@ export class NeedsSystem {
         }
       }
 
+      // Citizen inside a warm public building also gets warmth protection
+      if (!isAtHome && citizen?.insideBuildingId) {
+        const heatedBld = world.getComponent<any>(citizen.insideBuildingId, 'building');
+        if (heatedBld && HEATED_BUILDING_TYPES.has(heatedBld.type)
+            && (heatedBld.warmthLevel ?? 0) > HEATED_BUILDING_WARMTH_THRESHOLD) {
+          warmthDecay *= HEATED_BUILDING_DECAY_MULT;
+          needs.warmth = Math.min(100, needs.warmth + HEATED_BUILDING_WARMTH_RECOVERY);
+        }
+      }
+
       needs.warmth -= warmthDecay;
       needs.warmth = Math.max(0, needs.warmth);
 
@@ -181,8 +194,9 @@ export class NeedsSystem {
       }
 
       // Well proximity happiness
-      if (this.isNearWell(id)) {
-        needs.happiness = Math.min(100, needs.happiness + WELL_HAPPINESS_PER_TICK);
+      const wellGain = this.getWellHappinessGain(id);
+      if (wellGain > 0) {
+        needs.happiness = Math.min(100, needs.happiness + wellGain);
       }
 
       // Chapel community happiness
@@ -244,10 +258,12 @@ export class NeedsSystem {
 
     for (const [id, bld] of buildings) {
       if (!bld.completed) continue;
-      if (bld.type === BuildingType.WELL) {
+      if (bld.type === BuildingType.WELL || bld.type === BuildingType.STONE_WELL) {
         const pos = this.game.world.getComponent<any>(id, 'position');
         if (pos) {
-          this.wellPositions.push({ x: pos.tileX + 1, y: pos.tileY + 1, radius: WELL_HAPPINESS_RADIUS });
+          const radius = bld.type === BuildingType.STONE_WELL ? STONE_WELL_HAPPINESS_RADIUS : WELL_HAPPINESS_RADIUS;
+          const happinessPerTick = bld.type === BuildingType.STONE_WELL ? STONE_WELL_HAPPINESS_PER_TICK : WELL_HAPPINESS_PER_TICK;
+          this.wellPositions.push({ x: pos.tileX + 1, y: pos.tileY + 1, radius, happinessPerTick });
         }
       } else if (bld.type === BuildingType.CHAPEL) {
         this.hasChapel = true;
@@ -255,18 +271,18 @@ export class NeedsSystem {
     }
   }
 
-  /** Check if a citizen is near any well */
-  private isNearWell(citizenId: number): boolean {
-    if (this.wellPositions.length === 0) return false;
+  /** Return the happiness gain from any well the citizen is near (0 if not near any well) */
+  private getWellHappinessGain(citizenId: number): number {
+    if (this.wellPositions.length === 0) return 0;
     const pos = this.game.world.getComponent<any>(citizenId, 'position');
-    if (!pos) return false;
+    if (!pos) return 0;
 
     for (const well of this.wellPositions) {
       const dx = pos.tileX - well.x;
       const dy = pos.tileY - well.y;
-      if (dx * dx + dy * dy <= well.radius * well.radius) return true;
+      if (dx * dx + dy * dy <= well.radius * well.radius) return well.happinessPerTick;
     }
-    return false;
+    return 0;
   }
 
   private killCitizen(id: number): void {
@@ -289,7 +305,10 @@ export class NeedsSystem {
     const family = this.game.world.getComponent<any>(id, 'family');
     if (family?.partnerId) {
       const partnerFamily = this.game.world.getComponent<any>(family.partnerId, 'family');
-      if (partnerFamily) partnerFamily.partnerId = null;
+      if (partnerFamily) {
+        partnerFamily.partnerId = null;
+        partnerFamily.relationshipStatus = 'single';
+      }
     }
 
     // Remove from workplace
@@ -312,6 +331,6 @@ export class NeedsSystem {
     this.game.world.destroyEntity(id);
     this.game.state.totalDeaths++;
 
-    this.game.eventBus.emit('citizen_died', { id, name });
+    this.game.eventBus.emit('citizen_died', { id, name, cause });
   }
 }

@@ -27,17 +27,22 @@ import { LivestockSystem } from './systems/LivestockSystem';
 import { MilestoneSystem } from './systems/MilestoneSystem';
 import { UIManager } from './ui/UIManager';
 import { PlacementController } from './input/PlacementController';
-import { GameState, EntityId, DoorDef } from './types';
-import { BUILDING_DEFS } from './data/BuildingDefs';
+import { GameState, EntityId } from './types';
 import { SaveData } from './save/SaveTypes';
-import { logger, LOG_LEVEL_NAMES } from './utils/Logger';
+import { logger } from './utils/Logger';
+import { ResourceManager } from './ResourceManager';
+import { EntityFactory } from './EntityFactory';
+import { getCitizenRenderData, getBuildingRenderData, getTravelerRenderData } from './RenderDataGatherer';
+import type { PartnerPreference } from './components/Citizen';
+import type { GeneratedCitizenName } from './utils/NameGenerator';
 import {
-  TILE_SIZE, STARTING_ADULTS, STARTING_CHILDREN, CITIZEN_SPEED,
-  STARTING_RESOURCES, ResourceType, TileType, Profession, FOOD_TYPES, ALL_FOOD_TYPES, COOKED_FOOD_TYPES,
-  COOKED_MEAL_RESTORE, COOKED_MEAL_COST, ALL_TRAITS, MAX_TRAITS_PER_CITIZEN, PersonalityTrait,
-  SPEED_OPTIONS, BuildingType, CITIZEN_SPAWN_OFFSET, INITIAL_HOUSE_WARMTH,
-  BASE_STORAGE_CAPACITY, STORAGE_FULL_LOG_INTERVAL,
+  STARTING_RESOURCES, ResourceType, TileType, Profession,
+  SPEED_OPTIONS, TILE_SIZE,
+  PARTNER_PREFERENCE_OPPOSITE_SHARE, PARTNER_PREFERENCE_BOTH_SHARE, PARTNER_PREFERENCE_SAME_SHARE,
+  MINE_VEIN_EXHAUSTED_THRESHOLD, BuildingType,
+  DEMOLITION_WORK_MULT, DEMOLITION_RECLAIM_RATIO,
 } from './constants';
+import { BUILDING_DEFS } from './data/BuildingDefs';
 
 export class Game {
   // Core
@@ -65,7 +70,7 @@ export class Game {
   private renderSystem: RenderSystem;
   private movementSystem: MovementSystem;
   citizenAI: CitizenAISystem;
-  private constructionSystem: ConstructionSystem;
+  constructionSystem: ConstructionSystem;
   productionSystem: ProductionSystem;
   private needsSystem: NeedsSystem;
   storageSystem: StorageSystem;
@@ -85,11 +90,13 @@ export class Game {
   // State
   state: GameState;
 
-  // Global resource storage (simplified: single pool tracked globally)
-  globalResources = new Map<string, number>();
+  // Resource management (public for save/load direct access)
+  resources: ResourceManager;
+  private entityFactory: EntityFactory;
 
   /** Hook called at end of render() — used for pause menu overlay */
   postRenderHook: ((ctx: CanvasRenderingContext2D) => void) | null = null;
+  private mineVeinState = new Map<string, { remaining: number; max: number }>();
 
   private resizeHandler = () => this.resizeCanvas();
 
@@ -141,12 +148,17 @@ export class Game {
       nightAlpha: 0,
       assigningWorker: null,
       festival: null,
+      resourceLimits: {},
     };
 
-    // Initialize resources
+    // Resource manager
+    this.resources = new ResourceManager(this.world);
     for (const [key, val] of Object.entries(STARTING_RESOURCES)) {
-      this.globalResources.set(key, val);
+      this.resources.globalResources.set(key, val);
     }
+
+    // Entity factory
+    this.entityFactory = new EntityFactory(this.world, this.tileMap, this.rng, this.eventBus);
 
     // Systems
     this.renderSystem = new RenderSystem(canvas, this.camera, this.tileMap);
@@ -232,13 +244,14 @@ export class Game {
 
     if (!skipInit) {
       // Spawn starting citizens
-      this.spawnStartingCitizens(startPos.x, startPos.y);
+      this.entityFactory.spawnStartingCitizens(startPos.x, startPos.y);
+      this.populationSystem.initializeStartingRelationships();
 
       // Create initial stockpile at start location
-      this.createStartingStockpile(startPos.x, startPos.y);
+      this.entityFactory.createStartingStockpile(startPos.x, startPos.y);
 
       // Create starting buildings (house + gathering hut)
-      this.createStartingBuildings(startPos.x, startPos.y);
+      this.entityFactory.createStartingBuildings(startPos.x, startPos.y);
     }
 
     // Game loop
@@ -262,15 +275,13 @@ export class Game {
     this.state.selectedEntity = null;
     this.state.placingBuilding = null;
     this.state.assigningWorker = null;
+    if (!this.state.resourceLimits) this.state.resourceLimits = {}; // backwards compat
 
     // Restore RNG
     this.rng.setState(data.rngState);
 
     // Restore global resources
-    this.globalResources.clear();
-    for (const [key, val] of data.globalResources) {
-      this.globalResources.set(key, val);
-    }
+    this.resources.deserialize(data.globalResources);
 
     // Restore tiles (compact tuple: [type, trees, fertility, elevation, occupied, buildingId, stone, iron])
     for (let i = 0; i < data.tiles.length; i++) {
@@ -294,6 +305,9 @@ export class Game {
 
     // Restore ECS world
     this.world.deserialize(data.world);
+    this.ensureCitizenPreferenceCompatibility();
+    this.mineVeinState = new Map(data.mineVeinState || []);
+    this.syncMineVeinStateFromWorld();
 
     // Restore camera
     this.camera.x = data.camera.x;
@@ -342,6 +356,7 @@ export class Game {
   /** Stop the game loop and clean up */
   destroy(): void {
     this.loop.stop();
+    this.input.destroy();
     window.removeEventListener('resize', this.resizeHandler);
   }
 
@@ -412,8 +427,10 @@ export class Game {
     this.handleKeyboardShortcuts();
 
     // Gather entity data for rendering
-    const citizens = this.getCitizenRenderData();
-    const buildings = this.getBuildingRenderData();
+    const citizens = getCitizenRenderData(this.world);
+    const travelers = getTravelerRenderData(this.world);
+    const resourceMap = this.resources.buildResourceMap();
+    const buildings = getBuildingRenderData(this.world, this.state.assigningWorker, resourceMap);
     const ghosts = this.placementController.getGhostData();
 
     const drawParticles = (ctx: CanvasRenderingContext2D) => this.particleSystem.draw(ctx);
@@ -430,12 +447,12 @@ export class Game {
       }
     }
 
-    this.renderSystem.render(interp, this.state, { citizens, buildings, ghosts, drawParticles, selectedPath });
+    this.renderSystem.render(interp, this.state, { citizens, travelers, buildings, ghosts, drawParticles, selectedPath });
 
     // Draw UI on top
     const ctx = this.canvas.getContext('2d')!;
     this.uiManager.draw(ctx);
-    this.renderSystem.drawHUD(this.state, this.globalResources, this.weatherSystem.currentWeather, this.getStorageUsed(), this.getStorageCapacity());
+    this.renderSystem.drawHUD(this.state, resourceMap, this.weatherSystem.currentWeather, this.getStorageUsed(), this.getStorageCapacity());
 
     // Post-render hook (pause menu overlay)
     if (this.postRenderHook) {
@@ -491,6 +508,14 @@ export class Game {
       this.uiManager.toggleEventLog();
       this.input.keys.delete('l');
     }
+    if (this.input.isKeyDown('g')) {
+      this.uiManager.toggleResourceLimitsPanel();
+      this.input.keys.delete('g');
+    }
+    if (this.input.isKeyDown('v')) {
+      this.uiManager.toggleVillagerPanel();
+      this.input.keys.delete('v');
+    }
 
     // Speed controls: 1-5
     for (let i = 0; i < SPEED_OPTIONS.length; i++) {
@@ -508,243 +533,46 @@ export class Game {
     window.location.reload();
   }
 
-  private spawnStartingCitizens(cx: number, cy: number): void {
-    for (let i = 0; i < STARTING_ADULTS + STARTING_CHILDREN; i++) {
-      const isChild = i >= STARTING_ADULTS;
-      const isMale = i % 2 === 0;
-      const age = isChild ? this.rng.int(1, 8) : this.rng.int(18, 35);
-
-      const ox = this.rng.int(-CITIZEN_SPAWN_OFFSET, CITIZEN_SPAWN_OFFSET);
-      const oy = this.rng.int(-CITIZEN_SPAWN_OFFSET, CITIZEN_SPAWN_OFFSET);
-      const tx = cx + ox;
-      const ty = cy + oy;
-
-      const id = this.world.createEntity();
-
-      this.world.addComponent(id, 'position', {
-        tileX: tx, tileY: ty,
-        pixelX: tx * TILE_SIZE + TILE_SIZE / 2,
-        pixelY: ty * TILE_SIZE + TILE_SIZE / 2,
-      });
-
-      this.world.addComponent(id, 'citizen', {
-        name: this.generateName(isMale),
-        age,
-        isMale,
-        isChild,
-        isEducated: false,
-        isSleeping: false,
-        traits: this.generateTraits(),
-      });
-
-      this.world.addComponent(id, 'movement', {
-        path: [],
-        speed: CITIZEN_SPEED,
-        targetEntity: null,
-        moving: false,
-      });
-
-      this.world.addComponent(id, 'worker', {
-        profession: Profession.LABORER,
-        workplaceId: null,
-        carrying: null,
-        carryAmount: 0,
-        task: null,
-        manuallyAssigned: false,
-      });
-
-      this.world.addComponent(id, 'needs', {
-        food: 80 + this.rng.int(0, 20),
-        warmth: 100,
-        health: 100,
-        happiness: 80 + this.rng.int(0, 20),
-        energy: 80 + this.rng.int(0, 20),
-      });
-
-      this.world.addComponent(id, 'family', {
-        partnerId: null,
-        childrenIds: [],
-        homeId: null,
-        isPregnant: false,
-        pregnancyTicks: 0,
-        pregnancyPartnerId: null,
-      });
-
-      this.world.addComponent(id, 'renderable', {
-        sprite: null,
-        layer: 10,
-        animFrame: 0,
-        visible: true,
-      });
-    }
-  }
-
-  private createStartingStockpile(cx: number, cy: number): void {
-    // Place a stockpile near the center
-    const sx = cx + 3;
-    const sy = cy + 3;
-
-    if (this.tileMap.isAreaBuildable(sx, sy, 4, 4)) {
-      const id = this.world.createEntity();
-      this.world.addComponent(id, 'position', {
-        tileX: sx, tileY: sy,
-        pixelX: sx * TILE_SIZE, pixelY: sy * TILE_SIZE,
-      });
-      this.world.addComponent(id, 'building', {
-        type: BuildingType.STOCKPILE,
-        completed: true,
-        constructionProgress: 1,
-        width: 4,
-        height: 4,
-        category: 'Storage',
-        name: 'Stockpile',
-        maxWorkers: 0,
-        workRadius: 0,
-        assignedWorkers: [],
-        rotation: 0,
-      });
-      this.world.addComponent(id, 'storage', {
-        inventory: new Map<string, number>(),
-        capacity: 5000,
-      });
-      this.world.addComponent(id, 'renderable', {
-        sprite: null,
-        layer: 5,
-        animFrame: 0,
-        visible: true,
-      });
-      this.tileMap.markOccupied(sx, sy, 4, 4, id, false); // stockpile doesn't block movement
-    }
-  }
-
-  /** Spawn pre-built buildings so early game is survivable */
-  private createStartingBuildings(cx: number, cy: number): void {
-    // House — citizens need shelter to sleep and stay warm
-    this.placeStartingBuilding(BuildingType.WOODEN_HOUSE, cx - 4, cy - 1);
-
-    // Gathering hut — immediate food source while crops grow
-    this.placeStartingBuilding(BuildingType.GATHERING_HUT, cx - 4, cy + 3);
-  }
-
-  /** Place a pre-built building at the given tile, searching nearby if blocked */
-  private placeStartingBuilding(type: string, tx: number, ty: number): void {
-    const def = BUILDING_DEFS[type];
-    if (!def) return;
-
-    // Search in a spiral for a valid placement spot
-    let px = tx;
-    let py = ty;
-    let placed = false;
-    for (let r = 0; r < 8 && !placed; r++) {
-      for (let dx = -r; dx <= r && !placed; dx++) {
-        for (let dy = -r; dy <= r && !placed; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // only check perimeter
-          const cx = tx + dx;
-          const cy = ty + dy;
-          if (this.tileMap.isAreaBuildable(cx, cy, def.width, def.height)) {
-            px = cx;
-            py = cy;
-            placed = true;
-          }
-        }
-      }
-    }
-    if (!placed) return;
-
-    const id = this.world.createEntity();
-
-    this.world.addComponent(id, 'position', {
-      tileX: px, tileY: py,
-      pixelX: px * TILE_SIZE, pixelY: py * TILE_SIZE,
-    });
-
-    this.world.addComponent(id, 'building', {
-      type: def.type,
-      name: def.name,
-      category: def.category,
-      completed: true,
-      constructionProgress: 1,
-      constructionWork: def.constructionWork,
-      width: def.width,
-      height: def.height,
-      maxWorkers: def.maxWorkers,
-      workRadius: def.workRadius,
-      assignedWorkers: [],
-      costLog: 0,
-      costStone: 0,
-      costIron: 0,
-      materialsDelivered: true,
-      isStorage: def.isStorage,
-      storageCapacity: def.storageCapacity,
-      residents: def.residents,
-      durability: 100,
-      rotation: 0,
-      doorDef: def.doorDef,
-    });
-
-    this.world.addComponent(id, 'renderable', {
-      sprite: null, layer: 5, animFrame: 0, visible: true,
-    });
-
-    // Producer component (all completed buildings get this)
-    this.world.addComponent(id, 'producer', {
-      timer: 0, active: false, workerCount: 0,
-    });
-
-    // House component
-    if (type === BuildingType.WOODEN_HOUSE) {
-      this.world.addComponent(id, 'house', {
-        residents: [],
-        firewood: 20,
-        warmthLevel: INITIAL_HOUSE_WARMTH,
-        maxResidents: def.residents || 5,
-      });
-    }
-
-    this.tileMap.markOccupied(px, py, def.width, def.height, id, def.blocksMovement !== false);
-
-    this.eventBus.emit('building_completed', {
-      id, name: def.name, tileX: px, tileY: py,
-    });
-  }
-
-  /** Generate 1-2 random personality traits (no conflicting pairs) */
+  /** Delegate: generate traits for new citizens (used by PopulationSystem) */
   generateTraits(): string[] {
-    const count = this.rng.int(1, MAX_TRAITS_PER_CITIZEN);
-    const available = [...ALL_TRAITS];
-    const traits: string[] = [];
-
-    for (let i = 0; i < count && available.length > 0; i++) {
-      const idx = this.rng.int(0, available.length - 1);
-      const trait = available[idx];
-
-      // Remove conflicting pairs
-      traits.push(trait);
-      available.splice(idx, 1);
-
-      // Remove opposites
-      if (trait === PersonalityTrait.HARDWORKING) {
-        const lazyIdx = available.indexOf(PersonalityTrait.LAZY);
-        if (lazyIdx >= 0) available.splice(lazyIdx, 1);
-      } else if (trait === PersonalityTrait.LAZY) {
-        const hwIdx = available.indexOf(PersonalityTrait.HARDWORKING);
-        if (hwIdx >= 0) available.splice(hwIdx, 1);
-      } else if (trait === PersonalityTrait.CHEERFUL) {
-        const shyIdx = available.indexOf(PersonalityTrait.SHY);
-        if (shyIdx >= 0) available.splice(shyIdx, 1);
-      } else if (trait === PersonalityTrait.SHY) {
-        const cheerIdx = available.indexOf(PersonalityTrait.CHEERFUL);
-        if (cheerIdx >= 0) available.splice(cheerIdx, 1);
-      }
-    }
-
-    return traits;
+    return this.entityFactory.generateTraits();
   }
 
-  private generateName(isMale: boolean): string {
-    const maleNames = ['John', 'William', 'Thomas', 'Richard', 'Henry', 'Robert', 'Edward', 'George', 'James', 'Arthur'];
-    const femaleNames = ['Mary', 'Elizabeth', 'Anne', 'Margaret', 'Catherine', 'Jane', 'Alice', 'Eleanor', 'Rose', 'Sarah'];
-    return isMale ? this.rng.pick(maleNames) : this.rng.pick(femaleNames);
+  /** Delegate: generate partner preference for new citizens (used by PopulationSystem) */
+  generatePartnerPreference(): PartnerPreference {
+    return this.entityFactory.generatePartnerPreference();
+  }
+
+  /** Delegate: generate first/last names for new citizens (used by PopulationSystem) */
+  generateCitizenName(isMale: boolean): GeneratedCitizenName {
+    return this.entityFactory.generateCitizenName(isMale);
+  }
+
+  private ensureCitizenPreferenceCompatibility(): void {
+    const citizens = this.world.getComponentStore<any>('citizen');
+    if (!citizens) return;
+
+    for (const [id, citizen] of citizens) {
+      if (citizen.partnerPreference === 'opposite'
+        || citizen.partnerPreference === 'both'
+        || citizen.partnerPreference === 'same') {
+        continue;
+      }
+      citizen.partnerPreference = this.getLegacyPartnerPreference(id);
+    }
+  }
+
+  private getLegacyPartnerPreference(entityId: number): PartnerPreference {
+    let x = (this.seed ^ Math.imul(entityId, 0x9E3779B1)) | 0;
+    if (x === 0) x = 1;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    const roll = (x >>> 0) / 0xFFFFFFFF;
+    if (roll < PARTNER_PREFERENCE_OPPOSITE_SHARE) return 'opposite';
+    if (roll < PARTNER_PREFERENCE_OPPOSITE_SHARE + PARTNER_PREFERENCE_BOTH_SHARE) return 'both';
+    if (roll < PARTNER_PREFERENCE_OPPOSITE_SHARE + PARTNER_PREFERENCE_BOTH_SHARE + PARTNER_PREFERENCE_SAME_SHARE) return 'same';
+    return 'same';
   }
 
   private selectEntityAt(screenX: number, screenY: number): void {
@@ -806,6 +634,7 @@ export class Game {
       if (bld.maxWorkers === 0) return;
       const currentWorkers = bld.assignedWorkers?.length || 0;
       if (currentWorkers >= bld.maxWorkers) return;
+      if (this.isMineOrQuarryDepleted(buildingId)) return;
     }
 
     this.assignWorkerToBuilding(citizenId, buildingId);
@@ -819,6 +648,7 @@ export class Game {
 
     const bld = this.world.getComponent<any>(buildingId, 'building');
     if (!bld) return;
+    if (bld.completed && this.isMineOrQuarryDepleted(buildingId)) return;
 
     // Unassign from old workplace first
     if (worker.workplaceId !== null) {
@@ -867,231 +697,413 @@ export class Game {
     worker.carrying = null;
     worker.carryAmount = 0;
     worker.pendingResource = null;
+    worker.depositTargetId = null;
+    worker.demolitionCarryQueue = undefined;
+    worker.task = null;
   }
 
-  getCitizenRenderData() {
-    const result: Array<{
-      id: EntityId; x: number; y: number; isMale: boolean;
-      isChild: boolean; health: number; isSleeping: boolean; isSick: boolean;
-      isChatting: boolean; activity: string; isPregnant: boolean;
-    }> = [];
-    const positions = this.world.getComponentStore<any>('position');
-    const citizens = this.world.getComponentStore<any>('citizen');
-    const needs = this.world.getComponentStore<any>('needs');
-    const families = this.world.getComponentStore<any>('family');
+  /** True when a completed quarry/mine has no surface deposits and no usable underground reserve. */
+  isMineOrQuarryDepleted(buildingId: EntityId): boolean {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld || !bld.completed) return false;
+    if (bld.type !== BuildingType.QUARRY && bld.type !== BuildingType.MINE) return false;
 
-    if (!positions || !citizens) return result;
+    const producer = this.world.getComponent<any>(buildingId, 'producer');
+    if (!producer) return false;
 
-    for (const [id, cit] of citizens) {
-      const pos = positions.get(id);
-      if (!pos) continue;
-      // Skip citizens who are inside a building (sleeping, working, etc.)
-      if (cit.insideBuildingId != null) continue;
-      const need = needs?.get(id);
-      const fam = families?.get(id);
-      result.push({
-        id,
-        x: pos.tileX,
-        y: pos.tileY,
-        isMale: cit.isMale,
-        isChild: cit.isChild,
-        health: need?.health ?? 100,
-        isSleeping: cit.isSleeping ?? false,
-        isSick: need?.isSick ?? false,
-        isChatting: (cit.chatTimer ?? 0) > 0,
-        activity: cit.activity ?? 'idle',
-        isPregnant: fam?.isPregnant ?? false,
-      });
+    const remaining = bld.type === BuildingType.QUARRY
+      ? (producer.undergroundStone ?? 0)
+      : (producer.undergroundIron ?? 0);
+    if (remaining > MINE_VEIN_EXHAUSTED_THRESHOLD) return false;
+
+    return !this.hasMineOrQuarrySurfaceDeposits(buildingId, bld);
+  }
+
+  /** Unassign every worker currently attached to a building; returns release count. */
+  releaseWorkersFromBuilding(buildingId: EntityId): number {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld?.assignedWorkers?.length) return 0;
+
+    const toRelease = [...bld.assignedWorkers] as EntityId[];
+    for (const wId of toRelease) {
+      this.unassignWorker(wId);
     }
-    return result;
+    return toRelease.length;
   }
 
-  getBuildingRenderData() {
-    const result: Array<{
-      id: EntityId; x: number; y: number; w: number; h: number;
-      category: string; completed: boolean; progress: number; name: string;
-      type: string; isValidTarget?: boolean; isFullOrInvalid?: boolean;
-      cropStage?: number; doorDef?: DoorDef;
-      occupants?: Array<{ isMale: boolean; isChild: boolean }>;
-    }> = [];
-    const positions = this.world.getComponentStore<any>('position');
-    const buildings = this.world.getComponentStore<any>('building');
+  getMineVeinStateSnapshot(): [string, { remaining: number; max: number }][] {
+    return [...this.mineVeinState].map(([key, state]) => [key, { ...state }]);
+  }
 
-    if (!positions || !buildings) return result;
+  getOrCreateMineVeinReserve(
+    type: string,
+    tileX: number,
+    tileY: number,
+    generatedMax: number,
+  ): { remaining: number; max: number } {
+    const max = Math.max(0, Math.floor(generatedMax));
+    if (type !== BuildingType.QUARRY && type !== BuildingType.MINE) {
+      return { remaining: max, max };
+    }
 
-    // Pre-compute occupants inside each building
-    const citizenStore = this.world.getComponentStore<any>('citizen');
-    const occupantMap = new Map<EntityId, Array<{ isMale: boolean; isChild: boolean }>>();
-    if (citizenStore) {
-      for (const [, cit] of citizenStore) {
-        if (cit.insideBuildingId != null) {
-          let arr = occupantMap.get(cit.insideBuildingId);
-          if (!arr) { arr = []; occupantMap.set(cit.insideBuildingId, arr); }
-          arr.push({ isMale: cit.isMale, isChild: cit.isChild ?? false });
+    const key = this.getMineVeinKey(type, tileX, tileY);
+    const existing = this.mineVeinState.get(key);
+    if (existing) return { ...existing };
+
+    const created = { remaining: max, max };
+    this.mineVeinState.set(key, created);
+    return { ...created };
+  }
+
+  updateMineVeinStateFromBuilding(buildingId: EntityId): void {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld) return;
+    if (bld.type !== BuildingType.QUARRY && bld.type !== BuildingType.MINE) return;
+
+    const pos = this.world.getComponent<any>(buildingId, 'position');
+    const producer = this.world.getComponent<any>(buildingId, 'producer');
+    if (!pos || !producer) return;
+
+    const remaining = bld.type === BuildingType.QUARRY
+      ? (producer.undergroundStone ?? 0)
+      : (producer.undergroundIron ?? 0);
+    const max = Math.max(0, producer.maxUnderground ?? remaining ?? 0);
+    const key = this.getMineVeinKey(bld.type, pos.tileX, pos.tileY);
+    this.mineVeinState.set(key, { remaining: Math.max(0, remaining), max });
+  }
+
+  initiateDemolition(buildingId: EntityId): boolean {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld || !bld.completed || bld.isUpgrading || bld.isDemolishing) return false;
+
+    this.updateMineVeinStateFromBuilding(buildingId);
+
+    const house = this.world.getComponent<any>(buildingId, 'house');
+    if (house?.residents) {
+      for (const rId of house.residents as EntityId[]) {
+        const fam = this.world.getComponent<any>(rId, 'family');
+        if (fam?.homeId === buildingId) {
+          fam.homeId = null;
+        }
+      }
+      house.residents = [];
+    }
+
+    const citizens = this.world.getComponentStore<any>('citizen');
+    if (citizens) {
+      for (const [, citizen] of citizens) {
+        if (citizen.insideBuildingId === buildingId) {
+          citizen.insideBuildingId = null;
+          citizen.isSleeping = false;
         }
       }
     }
 
-    const assigning = this.state.assigningWorker !== null;
+    const refundLog = Math.floor((bld.costLog || 0) * DEMOLITION_RECLAIM_RATIO);
+    const refundStone = Math.floor((bld.costStone || 0) * DEMOLITION_RECLAIM_RATIO);
+    const refundIron = Math.floor((bld.costIron || 0) * DEMOLITION_RECLAIM_RATIO);
+    const pos = this.world.getComponent<any>(buildingId, 'position');
+
+    bld.completed = false;
+    bld.constructionProgress = 1;
+    bld.materialsDelivered = true;
+    bld.isDemolishing = true;
+    bld.demolitionProgress = 0;
+    bld.demolitionWork = Math.max(1, Math.ceil((bld.constructionWork || 100) * DEMOLITION_WORK_MULT));
+    bld.demolitionRefundLog = refundLog;
+    bld.demolitionRefundStone = refundStone;
+    bld.demolitionRefundIron = refundIron;
+
+    this.eventBus.emit('building_demolition_started', {
+      id: buildingId,
+      name: bld.name,
+      tileX: pos?.tileX,
+      tileY: pos?.tileY,
+      refundLog,
+      refundStone,
+      refundIron,
+    });
+    return true;
+  }
+
+  completeDemolition(buildingId: EntityId): void {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld) return;
+
+    this.updateMineVeinStateFromBuilding(buildingId);
+    const carrierIds = [...(bld.assignedWorkers || [])] as EntityId[];
+
+    const refundLog = Math.max(0, Math.floor(bld.demolitionRefundLog ?? 0));
+    const refundStone = Math.max(0, Math.floor(bld.demolitionRefundStone ?? 0));
+    const refundIron = Math.max(0, Math.floor(bld.demolitionRefundIron ?? 0));
+
+    const movedStorage: Array<[string, number]> = [];
+    const storage = this.world.getComponent<any>(buildingId, 'storage');
+    const inventory = storage?.inventory;
+    if (inventory instanceof Map) {
+      for (const [res, amount] of inventory) {
+        if ((amount as number) > 0) movedStorage.push([res as string, amount as number]);
+      }
+    } else if (inventory && typeof inventory === 'object') {
+      for (const [res, amount] of Object.entries(inventory as Record<string, number>)) {
+        if ((amount as number) > 0) movedStorage.push([res, amount as number]);
+      }
+    }
+    this.world.removeComponent(buildingId, 'storage');
+
+    const house = this.world.getComponent<any>(buildingId, 'house');
+    if (house?.residents) {
+      for (const rId of house.residents as EntityId[]) {
+        const fam = this.world.getComponent<any>(rId, 'family');
+        if (fam?.homeId === buildingId) fam.homeId = null;
+      }
+      house.residents = [];
+    }
+
+    const citizens = this.world.getComponentStore<any>('citizen');
+    if (citizens) {
+      for (const [, citizen] of citizens) {
+        if (citizen.insideBuildingId === buildingId) {
+          citizen.insideBuildingId = null;
+          citizen.isSleeping = false;
+        }
+      }
+    }
+
+    const pos = this.world.getComponent<any>(buildingId, 'position');
+    if (pos) {
+      for (let dy = 0; dy < (bld.height || 1); dy++) {
+        for (let dx = 0; dx < (bld.width || 1); dx++) {
+          this.tileMap.set(pos.tileX + dx, pos.tileY + dy, {
+            occupied: false,
+            buildingId: null,
+            blocksMovement: false,
+          });
+        }
+      }
+    }
+
+    this.world.destroyEntity(buildingId);
+    for (const [res, amount] of movedStorage) {
+      this.addResource(res, amount);
+    }
+    const queued = this.queueDemolitionReclaimDeliveries(carrierIds, [
+      { type: ResourceType.LOG, amount: refundLog },
+      { type: ResourceType.STONE, amount: refundStone },
+      { type: ResourceType.IRON, amount: refundIron },
+    ]);
+    if (!queued) {
+      this.addResource(ResourceType.LOG, refundLog);
+      this.addResource(ResourceType.STONE, refundStone);
+      this.addResource(ResourceType.IRON, refundIron);
+    }
+
+    if (this.state.selectedEntity === buildingId) {
+      this.state.selectedEntity = null;
+    }
+
+    this.pathfinder.clearCache();
+
+    this.eventBus.emit('building_demolished', {
+      id: buildingId,
+      name: bld.name,
+      tileX: pos?.tileX,
+      tileY: pos?.tileY,
+      refundLog,
+      refundStone,
+      refundIron,
+    });
+  }
+
+  private queueDemolitionReclaimDeliveries(
+    carrierIds: EntityId[],
+    deliveries: Array<{ type: ResourceType; amount: number }>,
+  ): boolean {
+    const workerStore = this.world.getComponentStore<any>('worker');
+    if (!workerStore) return false;
+
+    const workers: EntityId[] = [];
+    for (const id of carrierIds) {
+      const worker = workerStore.get(id);
+      if (!worker) continue;
+
+      worker.workplaceId = null;
+      worker.profession = Profession.LABORER;
+      worker.manuallyAssigned = false;
+      worker.gatherState = undefined;
+      worker.gatherTimer = 0;
+      worker.gatherTargetTile = null;
+      worker.carrying = null;
+      worker.carryAmount = 0;
+      worker.pendingResource = null;
+      worker.depositTargetId = null;
+      worker.task = null;
+      worker.demolitionCarryQueue = undefined;
+      workers.push(id);
+    }
+
+    const salvage = deliveries.filter(d => d.amount > 0);
+    if (salvage.length === 0) return true;
+    if (workers.length === 0) return false;
+
+    let idx = 0;
+    for (const delivery of salvage) {
+      const workerId = workers[idx % workers.length];
+      const worker = workerStore.get(workerId)!;
+      if (!worker.demolitionCarryQueue) worker.demolitionCarryQueue = [];
+      worker.demolitionCarryQueue.push({ type: delivery.type, amount: delivery.amount });
+      idx++;
+    }
+
+    for (const id of workers) {
+      const worker = workerStore.get(id)!;
+      const queue = worker.demolitionCarryQueue;
+      if (!queue || queue.length === 0) continue;
+      const first = queue.shift()!;
+      worker.carrying = first.type;
+      worker.carryAmount = first.amount;
+      worker.task = 'demolish_carry';
+    }
+
+    return true;
+  }
+
+  private syncMineVeinStateFromWorld(): void {
+    const buildings = this.world.getComponentStore<any>('building');
+    const producers = this.world.getComponentStore<any>('producer');
+    const positions = this.world.getComponentStore<any>('position');
+    if (!buildings || !producers || !positions) return;
 
     for (const [id, bld] of buildings) {
+      if (bld.type !== BuildingType.QUARRY && bld.type !== BuildingType.MINE) continue;
+
+      const producer = producers.get(id);
       const pos = positions.get(id);
-      if (!pos) continue;
+      if (!producer || !pos) continue;
 
-      let isValidTarget: boolean | undefined;
-      let isFullOrInvalid: boolean | undefined;
+      const key = this.getMineVeinKey(bld.type, pos.tileX, pos.tileY);
+      if (this.mineVeinState.has(key)) continue;
 
-      if (assigning) {
-        if (bld.completed && bld.maxWorkers > 0) {
-          const currentWorkers = bld.assignedWorkers?.length || 0;
-          if (currentWorkers < bld.maxWorkers) {
-            isValidTarget = true;
-          } else {
-            isFullOrInvalid = true;
-          }
-        } else {
-          isFullOrInvalid = true;
-        }
-      }
-
-      // Get crop stage if this is a crop field
-      let cropStage: number | undefined;
-      const producer = this.world.getComponent<any>(id, 'producer');
-      if (bld.type === BuildingType.CROP_FIELD && producer) {
-        cropStage = producer.cropStage;
-      }
-
-      result.push({
-        id,
-        x: pos.tileX,
-        y: pos.tileY,
-        w: bld.width,
-        h: bld.height,
-        category: bld.category,
-        completed: bld.completed,
-        progress: bld.constructionProgress,
-        name: bld.name,
-        type: bld.type,
-        isValidTarget,
-        isFullOrInvalid,
-        cropStage,
-        doorDef: bld.doorDef,
-        occupants: occupantMap.get(id),
-      });
+      const remaining = bld.type === BuildingType.QUARRY
+        ? (producer.undergroundStone ?? 0)
+        : (producer.undergroundIron ?? 0);
+      const max = Math.max(0, producer.maxUnderground ?? remaining ?? 0);
+      this.mineVeinState.set(key, { remaining: Math.max(0, remaining), max });
     }
-    return result;
   }
 
-  /** Get total of a resource across all storage buildings + global pool */
-  getResource(type: string): number {
-    return this.globalResources.get(type) || 0;
+  private getMineVeinKey(type: string, tileX: number, tileY: number): string {
+    return `${type}:${tileX},${tileY}`;
   }
 
-  /** Get total storage capacity from all completed storage buildings + base */
-  getStorageCapacity(): number {
-    let cap = BASE_STORAGE_CAPACITY;
-    const buildings = this.world.getComponentStore<any>('building');
-    if (buildings) {
-      for (const [, bld] of buildings) {
-        if (bld.completed && bld.isStorage && bld.storageCapacity) {
-          cap += bld.storageCapacity;
+  private hasMineOrQuarrySurfaceDeposits(buildingId: EntityId, bld: any): boolean {
+    const pos = this.world.getComponent<any>(buildingId, 'position');
+    if (!pos) return false;
+
+    const isQuarry = bld.type === BuildingType.QUARRY;
+    const radius = bld.workRadius || 20;
+    const cx = pos.tileX + Math.floor((bld.width || 1) / 2);
+    const cy = pos.tileY + Math.floor((bld.height || 1) / 2);
+    const r2 = radius * radius;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const tile = this.tileMap.get(cx + dx, cy + dy);
+        if (!tile) continue;
+        if (isQuarry) {
+          if (tile.type === TileType.STONE && (tile.stoneAmount ?? 0) > 0) return true;
+        } else if (tile.type === TileType.IRON && (tile.ironAmount ?? 0) > 0) {
+          return true;
         }
       }
     }
-    return cap;
+
+    return false;
   }
 
-  /** Get total resources stored (excludes house firewood which is per-house) */
-  getStorageUsed(): number {
-    let total = 0;
-    for (const [, val] of this.globalResources) {
-      total += val;
-    }
-    return total;
+  // ── Resource delegate methods (preserve external API) ──
+
+  getResource(type: string): number { return this.resources.getResource(type); }
+  addResource(type: string, amount: number): number { return this.resources.addResource(type, amount); }
+  removeResource(type: string, amount: number): number { return this.resources.removeResource(type, amount); }
+  getTotalFood(): number { return this.resources.getTotalFood(); }
+  removeFood(amount: number): number { return this.resources.removeFood(amount); }
+  removeFoodPreferVariety(amount: number, recentDiet: string[]): { eaten: number; type: string } { return this.resources.removeFoodPreferVariety(amount, recentDiet); }
+  getStorageCapacity(): number { return this.resources.getStorageCapacity(); }
+  getStorageUsed(): number { return this.resources.getStorageUsed(); }
+  isStorageFull(): boolean { return this.resources.isStorageFull(); }
+  getResourceLimit(type: string): number | undefined { return this.state.resourceLimits[type]; }
+  isResourceLimitMet(type: string): boolean {
+    const limit = this.getResourceLimit(type);
+    if (limit === undefined) return false;
+    return this.getResource(type) >= limit;
+  }
+  addResourceRespectingLimit(type: string, amount: number): number {
+    const limit = this.getResourceLimit(type);
+    const cappedAmount = limit === undefined
+      ? amount
+      : Math.max(0, Math.min(amount, limit - this.getResource(type)));
+    if (cappedAmount <= 0) return 0;
+    return this.addResource(type, cappedAmount);
   }
 
-  /** Check if global storage is at capacity */
-  isStorageFull(): boolean {
-    return this.getStorageUsed() >= this.getStorageCapacity();
+  setResourceLimit(key: string, limit: number | undefined): void {
+    if (limit === undefined) {
+      delete this.state.resourceLimits[key];
+    } else {
+      this.state.resourceLimits[key] = limit;
+    }
   }
 
-  /** Add resource to global pool, capped by storage capacity. Returns amount actually added. */
-  addResource(type: string, amount: number): number {
-    const used = this.getStorageUsed();
-    const cap = this.getStorageCapacity();
-    const space = Math.max(0, cap - used);
-    const actual = Math.min(amount, space);
-    if (actual > 0) {
-      this.globalResources.set(type, (this.globalResources.get(type) || 0) + actual);
-    }
-    return actual;
-  }
+  /**
+   * Initiate an upgrade from a building to its tier-2 variant.
+   * Deducts resources, sets upgrade state on the building.
+   * Returns true if upgrade was started, false otherwise.
+   */
+  initiateUpgrade(buildingId: EntityId): boolean {
+    const bld = this.world.getComponent<any>(buildingId, 'building');
+    if (!bld || !bld.completed || bld.isUpgrading) return false;
 
-  /** Remove resource from global pool, returns actual amount removed */
-  removeResource(type: string, amount: number): number {
-    const current = this.globalResources.get(type) || 0;
-    const removed = Math.min(current, amount);
-    this.globalResources.set(type, current - removed);
-    return removed;
-  }
+    const def = BUILDING_DEFS[bld.type];
+    if (!def?.upgradesTo) return false;
 
-  /** Get total food across all food types (raw + cooked) */
-  getTotalFood(): number {
-    let total = 0;
-    for (const ft of ALL_FOOD_TYPES) {
-      total += this.getResource(ft);
-    }
-    total += this.getResource('food'); // generic starting food
-    return total;
-  }
+    const targetDef = BUILDING_DEFS[def.upgradesTo];
+    if (!targetDef) return false;
 
-  /** Remove food (picks from available types — prefers cooked food) */
-  removeFood(amount: number): number {
-    let remaining = amount;
-    // Try cooked food first (higher value)
-    for (const ft of COOKED_FOOD_TYPES) {
-      if (remaining <= 0) break;
-      remaining -= this.removeResource(ft, remaining);
-    }
-    // Try generic food
-    remaining -= this.removeResource('food', remaining);
-    // Then raw food types
-    for (const ft of FOOD_TYPES) {
-      if (remaining <= 0) break;
-      remaining -= this.removeResource(ft, remaining);
-    }
-    return amount - remaining;
-  }
+    const costLog = def.upgradeCostLog ?? 0;
+    const costStone = def.upgradeCostStone ?? 0;
+    const costIron = def.upgradeCostIron ?? 0;
 
-  /** Remove food and return the type consumed (prefers types not in avoidList) */
-  removeFoodPreferVariety(amount: number, recentDiet: string[]): { eaten: number; type: string } {
-    // Count how often each type appears in recent diet
-    const dietCounts = new Map<string, number>();
-    for (const t of recentDiet) {
-      dietCounts.set(t, (dietCounts.get(t) || 0) + 1);
-    }
+    if (this.getResource('log') < costLog) return false;
+    if (this.getResource('stone') < costStone) return false;
+    if (this.getResource('iron') < costIron) return false;
 
-    // Sort food types by: least-recently-eaten first
-    const available: { type: string; count: number }[] = [];
-    if (this.getResource('food') >= amount) {
-      available.push({ type: 'food', count: dietCounts.get('food') || 0 });
-    }
-    for (const ft of ALL_FOOD_TYPES) {
-      if (this.getResource(ft) >= amount) {
-        available.push({ type: ft, count: dietCounts.get(ft) || 0 });
+    // For size-expanding upgrades, check extra tiles at initiation time
+    if (targetDef.upgradeSizeW || targetDef.upgradeSizeH) {
+      const bPos = this.world.getComponent<any>(buildingId, 'position')!;
+      const newW = targetDef.upgradeSizeW ?? bld.width;
+      const newH = targetDef.upgradeSizeH ?? bld.height;
+      if (!this.constructionSystem.checkExtraUpgradeTilesInternal(bPos.tileX, bPos.tileY, bld.width, bld.height, newW, newH)) {
+        this.uiManager.addNotification('Cannot upgrade: expansion area is blocked!', '#ff8844');
+        return false;
       }
     }
 
-    if (available.length === 0) {
-      // Fall back to partial removal
-      const eaten = this.removeFood(amount);
-      return { eaten, type: 'food' };
-    }
+    // Deduct resources
+    this.removeResource('log', costLog);
+    this.removeResource('stone', costStone);
+    this.removeResource('iron', costIron);
 
-    // Pick the least-recently-eaten type
-    available.sort((a, b) => a.count - b.count);
-    const chosen = available[0];
-    const eaten = this.removeResource(chosen.type, amount);
-    return { eaten, type: chosen.type };
+    bld.isUpgrading = true;
+    bld.upgradeProgress = 0;
+    bld.upgradeTotalWork = def.upgradeWork ?? 200;
+    bld.upgradeTargetType = def.upgradesTo;
+
+    this.eventBus.emit('building_upgrade_started', {
+      id: buildingId, name: bld.name, targetName: targetDef.name,
+    });
+
+    return true;
   }
 }

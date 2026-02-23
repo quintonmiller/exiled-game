@@ -12,13 +12,20 @@ import {
   GATHER_CARRY_SKILL_BONUS, GATHER_TOOL_WEAR_PER_TRIP,
   NO_TOOL_PRODUCTION_MULT,
   FORESTER_CHOP_TICKS, FORESTER_CARRY_CAPACITY,
+  QUARRY_SURFACE_STONE_PER_HARVEST, MINE_SURFACE_IRON_PER_HARVEST,
+  QUARRY_CYCLE_TICKS, MINE_CYCLE_TICKS,
+  QUARRY_STONE_PER_CYCLE, MINE_IRON_PER_CYCLE,
+  MINE_VEIN_DEPLETION_FAST, MINE_VEIN_DEPLETION_SLOW, MINE_VEIN_EXHAUSTED_THRESHOLD,
+  MINE_CARRY_BONUS_PER_SKILL,
 } from '../../constants';
 import { BUILDING_ACTIVITY_LABELS, grantSkillXP, getWorkerSkillLevel, getCitizenTraitBonus } from './CitizenUtils';
 
 /** Map building type to the tile resource field(s) workers should seek */
 const BUILDING_RESOURCE_TARGETS: Record<string, Array<'berries' | 'mushrooms' | 'herbs' | 'fish' | 'wildlife'>> = {
   [BuildingType.GATHERING_HUT]: ['berries', 'mushrooms'],
+  [BuildingType.GATHERING_LODGE]: ['berries', 'mushrooms'],
   [BuildingType.HUNTING_CABIN]: ['wildlife'],
+  [BuildingType.HUNTING_LODGE]: ['wildlife'],
   [BuildingType.FISHING_DOCK]: ['fish'],
   [BuildingType.HERBALIST]: ['herbs'],
 };
@@ -46,6 +53,9 @@ export class GatherHandler {
     worker.carrying = null;
     worker.carryAmount = 0;
     worker.pendingResource = null;
+    worker.depositTargetId = null;
+    worker.demolitionCarryQueue = undefined;
+    worker.task = null;
   }
 
   /** Main gather-carry-deposit state machine */
@@ -262,17 +272,17 @@ export class GatherHandler {
         switch (bld.type) {
           case BuildingType.GATHERING_HUT:
             if (harvestedResource === 'berries') {
-              worker.carrying = ResourceType.BERRIES;
-            } else {
-              worker.carrying = ResourceType.MUSHROOMS;
-            }
-            worker.carryAmount = carryAmount;
-            // Bonus: chance of roots
-            if (Math.random() < GATHER_ROOTS_CHANCE) {
-              // Add roots directly to stockpile (small bonus, not carried)
-              this.game.addResource(ResourceType.ROOTS, 1);
-            }
-            break;
+            worker.carrying = ResourceType.BERRIES;
+          } else {
+            worker.carrying = ResourceType.MUSHROOMS;
+          }
+          worker.carryAmount = carryAmount;
+          // Bonus: chance of roots
+          if (Math.random() < GATHER_ROOTS_CHANCE) {
+            // Add roots directly to stockpile (small bonus, not carried)
+            this.game.addResourceRespectingLimit(ResourceType.ROOTS, 1);
+          }
+          break;
 
           case BuildingType.HUNTING_CABIN:
             worker.carrying = ResourceType.VENISON;
@@ -302,10 +312,11 @@ export class GatherHandler {
             break;
         }
 
-        // Transition to returning
+        // Transition to returning — pick nearest storage building to deposit at
         worker.gatherState = 'returning';
         worker.gatherTimer = 0;
         worker.gatherTargetTile = null;
+        worker.depositTargetId = this.findNearestStorageBuilding(id);
 
         logger.debug('AI', `${citizen.name} (${id}) gathered ${worker.carryAmount} ${worker.carrying}, returning to building`);
       }
@@ -317,8 +328,25 @@ export class GatherHandler {
       citizen.activity = 'returning';
       movement.stuckTicks = 0;
 
-      if (this.nav.isNearBuilding(id, buildingId)) {
-        // At building — deposit
+      // Re-seek deposit target if it's missing or its storage is full
+      if (worker.depositTargetId) {
+        const depStorage = this.game.world.getComponent<any>(worker.depositTargetId, 'storage');
+        if (depStorage) {
+          const inv = depStorage.inventory as Record<string, number>;
+          const used = Object.values(inv).reduce((a, b) => a + b, 0);
+          if (used >= depStorage.capacity) {
+            worker.depositTargetId = this.findNearestStorageBuilding(id);
+          }
+        } else {
+          worker.depositTargetId = null;
+        }
+      }
+
+      // Walk to deposit target (storage building) or fall back to work building
+      const depositId: EntityId = (worker.depositTargetId != null) ? worker.depositTargetId : buildingId;
+
+      if (this.nav.isNearBuilding(id, depositId)) {
+        // At deposit location — deposit
         if (worker.carrying) {
           // Check storage full — wait if so
           if (this.game.isStorageFull()) {
@@ -326,7 +354,7 @@ export class GatherHandler {
             return;
           }
 
-          this.game.addResource(worker.carrying, worker.carryAmount);
+          this.game.addResourceRespectingLimit(worker.carrying, worker.carryAmount);
           logger.debug('AI', `${citizen.name} (${id}) deposited ${worker.carryAmount} ${worker.carrying}`);
           worker.carrying = null;
           worker.carryAmount = 0;
@@ -338,6 +366,8 @@ export class GatherHandler {
           worker.carrying = pending.type;
           worker.carryAmount = pending.amount;
           worker.pendingResource = null;
+          // Pick a fresh deposit target for the leather trip
+          worker.depositTargetId = this.findNearestStorageBuilding(id);
           // Path back to the kill site to pick up leather
           const pos = this.game.world.getComponent<any>(id, 'position')!;
           const result = this.game.pathfinder.findPath(pos.tileX, pos.tileY, pending.tile.x, pending.tile.y);
@@ -353,14 +383,15 @@ export class GatherHandler {
         }
 
         // Back to seeking
+        worker.depositTargetId = null;
         worker.gatherState = 'seeking';
         worker.gatherTargetTile = null;
         return;
       }
 
-      // Not at building — path there
+      // Not at deposit location — path there
       if (!movement.path || movement.path.length === 0) {
-        this.nav.goToBuilding(id, buildingId);
+        this.nav.goToBuilding(id, depositId);
       }
       return;
     }
@@ -572,6 +603,309 @@ export class GatherHandler {
         if (this.game.tileMap.isWalkable(tx + dx, ty + dy)) {
           return { x: tx + dx, y: ty + dy };
         }
+      }
+    }
+    return null;
+  }
+
+  /** Hybrid surface+underground mine cycle for QUARRY and MINE buildings */
+  handleMineCycle(
+    id: EntityId, worker: any, citizen: any, movement: any,
+    buildingId: EntityId, bld: any,
+  ): void {
+    const isQuarry = bld.type === BuildingType.QUARRY;
+
+    if (!worker.gatherState) {
+      worker.gatherState = worker.carrying ? 'returning' : 'seeking';
+    }
+
+    // -- SEEKING --
+    if (worker.gatherState === 'seeking') {
+      citizen.activity = isQuarry ? 'quarrying stone' : 'mining iron';
+      movement.stuckTicks = 0;
+
+      if (this.game.isStorageFull()) {
+        citizen.activity = 'idle';
+        if (!this.nav.isNearBuilding(id, buildingId)) this.nav.goToBuilding(id, buildingId);
+        return;
+      }
+
+      // Handle existing gatherTargetTile (walking to surface tile)
+      if (worker.gatherTargetTile) {
+        const target = worker.gatherTargetTile;
+        const tile = this.game.tileMap.get(target.x, target.y);
+        const hasResource = isQuarry
+          ? (tile?.type === TileType.STONE && (tile?.stoneAmount ?? 0) > 0)
+          : (tile?.type === TileType.IRON && (tile?.ironAmount ?? 0) > 0);
+
+        if (!hasResource) {
+          worker.gatherTargetTile = null; // depleted while walking, re-seek
+        } else if (this.isAtTile(id, target.x, target.y)) {
+          worker.gatherState = 'gathering';
+          worker.gatherTimer = 0;
+          return;
+        } else if (!movement.path || movement.path.length === 0) {
+          const pos = this.game.world.getComponent<any>(id, 'position')!;
+          const result = this.game.pathfinder.findPath(pos.tileX, pos.tileY, target.x, target.y);
+          if (result.found && result.path.length > 0) {
+            movement.path = result.path;
+            movement.targetEntity = buildingId;
+          } else {
+            worker.gatherTargetTile = null;
+          }
+          return;
+        } else {
+          return; // still walking to surface tile
+        }
+      }
+
+      // No target — scan for surface tiles
+      const surfaceTile = this.findSurfaceTile(id, buildingId, bld);
+      if (surfaceTile) {
+        worker.gatherTargetTile = { x: surfaceTile.x, y: surfaceTile.y };
+        const pos = this.game.world.getComponent<any>(id, 'position')!;
+        const result = this.game.pathfinder.findPath(pos.tileX, pos.tileY, surfaceTile.x, surfaceTile.y);
+        if (result.found && result.path.length > 0) {
+          movement.path = result.path;
+          movement.targetEntity = buildingId;
+        }
+        return;
+      }
+
+      // No surface tiles — check underground reserve
+      const producer = this.game.world.getComponent<any>(buildingId, 'producer');
+      const remaining = isQuarry ? (producer?.undergroundStone ?? 0) : (producer?.undergroundIron ?? 0);
+
+      if (remaining <= MINE_VEIN_EXHAUSTED_THRESHOLD) {
+        if (this.game.isMineOrQuarryDepleted(buildingId)) {
+          this.game.releaseWorkersFromBuilding(buildingId);
+        }
+        citizen.activity = 'idle';
+        if (!this.nav.isNearBuilding(id, buildingId)) this.nav.goToBuilding(id, buildingId);
+        return;
+      }
+
+      // Head to building entrance, then enter underground
+      if (this.nav.isNearBuilding(id, buildingId)) {
+        this.nav.enterBuilding(id, buildingId);
+        worker.gatherState = 'gathering';
+        worker.gatherTargetTile = null; // null = underground mode
+        worker.gatherTimer = 0;
+      } else {
+        this.nav.goToBuilding(id, buildingId);
+      }
+      return;
+    }
+
+    // -- GATHERING (surface mode: gatherTargetTile !== null) --
+    if (worker.gatherState === 'gathering' && worker.gatherTargetTile !== null) {
+      citizen.activity = isQuarry ? 'quarrying stone' : 'mining iron';
+      movement.stuckTicks = 0;
+
+      const target = worker.gatherTargetTile;
+      const tile = this.game.tileMap.get(target.x, target.y);
+      const hasResource = isQuarry
+        ? (tile?.type === TileType.STONE && (tile?.stoneAmount ?? 0) > 0)
+        : (tile?.type === TileType.IRON && (tile?.ironAmount ?? 0) > 0);
+
+      if (!hasResource) {
+        worker.gatherTargetTile = null;
+        worker.gatherState = 'seeking';
+        worker.gatherTimer = 0;
+        return;
+      }
+
+      grantSkillXP(worker);
+      worker.gatherTimer = (worker.gatherTimer || 0) + AI_TICK_INTERVAL;
+
+      const skillLevel = getWorkerSkillLevel(worker);
+      const skillBonus = skillLevel * SKILL_EFFICIENCY_PER_LEVEL;
+      const milestoneBonus = this.game.milestoneSystem.getBonus('gathering_speed');
+      const effectiveTime = GATHER_TICKS_BASE / (1 + skillBonus + milestoneBonus);
+
+      if (worker.gatherTimer >= effectiveTime) {
+        const harvestAmount = isQuarry ? QUARRY_SURFACE_STONE_PER_HARVEST : MINE_SURFACE_IRON_PER_HARVEST;
+        if (isQuarry) {
+          this.game.tileMap.consumeStone(target.x, target.y, harvestAmount);
+        } else {
+          this.game.tileMap.consumeIron(target.x, target.y, harvestAmount);
+        }
+        const carryBonus = skillLevel * MINE_CARRY_BONUS_PER_SKILL;
+        worker.carrying = isQuarry ? ResourceType.STONE : ResourceType.IRON;
+        worker.carryAmount = Math.max(1, harvestAmount + carryBonus);
+        worker.gatherState = 'returning';
+        worker.gatherTargetTile = null;
+        worker.gatherTimer = 0;
+        worker.depositTargetId = this.findNearestStorageBuilding(id);
+      }
+      return;
+    }
+
+    // -- GATHERING (underground mode: gatherTargetTile === null) --
+    if (worker.gatherState === 'gathering' && worker.gatherTargetTile === null) {
+      citizen.activity = isQuarry ? 'quarrying stone' : 'mining iron';
+      this.nav.enterBuilding(id, buildingId); // re-establish inside-building state each tick
+      movement.stuckTicks = 0;
+
+      const producer = this.game.world.getComponent<any>(buildingId, 'producer');
+      if (!producer) { worker.gatherState = 'seeking'; return; }
+
+      const remaining = isQuarry ? (producer.undergroundStone ?? 0) : (producer.undergroundIron ?? 0);
+      if (remaining <= MINE_VEIN_EXHAUSTED_THRESHOLD) {
+        if (this.game.isMineOrQuarryDepleted(buildingId)) {
+          this.game.releaseWorkersFromBuilding(buildingId);
+        }
+        worker.gatherState = 'seeking';
+        return;
+      }
+
+      grantSkillXP(worker);
+      worker.gatherTimer = (worker.gatherTimer || 0) + AI_TICK_INTERVAL;
+
+      const skillLevel = getWorkerSkillLevel(worker);
+      const skillBonus = skillLevel * SKILL_EFFICIENCY_PER_LEVEL;
+      const milestoneBonus = this.game.milestoneSystem.getBonus('gathering_speed');
+      const cycleTicks = isQuarry ? QUARRY_CYCLE_TICKS : MINE_CYCLE_TICKS;
+      const effectiveTime = cycleTicks / (1 + skillBonus + milestoneBonus);
+
+      if (worker.gatherTimer >= effectiveTime) {
+        const maxUnderground = producer.maxUnderground ?? 1;
+        const ratio = remaining / maxUnderground;
+        let extractionRate: number;
+        if (ratio > MINE_VEIN_DEPLETION_FAST) extractionRate = 1.0;
+        else if (ratio > MINE_VEIN_DEPLETION_SLOW) extractionRate = 0.75;
+        else extractionRate = 0.4;
+
+        const baseAmount = isQuarry ? QUARRY_STONE_PER_CYCLE : MINE_IRON_PER_CYCLE;
+        const carryBonus = skillLevel * MINE_CARRY_BONUS_PER_SKILL;
+        const rawAmount = Math.ceil((baseAmount + carryBonus) * extractionRate);
+        const actualAmount = Math.min(rawAmount, Math.max(0, remaining - MINE_VEIN_EXHAUSTED_THRESHOLD + 1));
+
+        if (isQuarry) {
+          producer.undergroundStone = Math.max(0, remaining - actualAmount);
+        } else {
+          producer.undergroundIron = Math.max(0, remaining - actualAmount);
+        }
+        this.game.updateMineVeinStateFromBuilding(buildingId);
+
+        worker.carrying = isQuarry ? ResourceType.STONE : ResourceType.IRON;
+        worker.carryAmount = Math.max(1, actualAmount);
+        worker.gatherState = 'returning';
+        worker.gatherTimer = 0;
+        worker.depositTargetId = this.findNearestStorageBuilding(id);
+      }
+      return;
+    }
+
+    // -- RETURNING --
+    if (worker.gatherState === 'returning') {
+      citizen.activity = 'returning';
+      movement.stuckTicks = 0;
+
+      // Re-seek deposit target if full or missing
+      if (worker.depositTargetId) {
+        const depStorage = this.game.world.getComponent<any>(worker.depositTargetId, 'storage');
+        if (depStorage) {
+          const inv = depStorage.inventory as Record<string, number>;
+          const used = Object.values(inv).reduce((a, b) => a + b, 0);
+          if (used >= depStorage.capacity) {
+            worker.depositTargetId = this.findNearestStorageBuilding(id);
+          }
+        } else {
+          worker.depositTargetId = null;
+        }
+      }
+
+      const depositId: EntityId = (worker.depositTargetId != null) ? worker.depositTargetId : buildingId;
+
+      if (this.nav.isNearBuilding(id, depositId)) {
+        if (worker.carrying) {
+          if (this.game.isStorageFull()) { citizen.activity = 'idle'; return; }
+          this.game.addResourceRespectingLimit(worker.carrying, worker.carryAmount);
+          worker.carrying = null;
+          worker.carryAmount = 0;
+        }
+        worker.depositTargetId = null;
+        worker.gatherState = 'seeking';
+        worker.gatherTargetTile = null;
+        return;
+      }
+
+      if (!movement.path || movement.path.length === 0) {
+        this.nav.goToBuilding(id, depositId);
+      }
+      return;
+    }
+
+    // Fallback
+    worker.gatherState = 'seeking';
+  }
+
+  /** Find nearest completed storage building with available space */
+  private findNearestStorageBuilding(citizenId: EntityId): EntityId | null {
+    const pos = this.game.world.getComponent<any>(citizenId, 'position');
+    if (!pos) return null;
+    const buildings = this.game.world.getComponentStore<any>('building');
+    if (!buildings) return null;
+    let best: EntityId | null = null;
+    let bestDist = Infinity;
+    for (const [id, bld] of buildings) {
+      if (!bld.completed || !bld.isStorage) continue;
+      const storage = this.game.world.getComponent<any>(id, 'storage');
+      if (!storage) continue;
+      const inv = storage.inventory as Record<string, number>;
+      const used = Object.values(inv).reduce((a, b) => a + b, 0);
+      if (used >= storage.capacity) continue;
+      const bPos = this.game.world.getComponent<any>(id, 'position');
+      if (!bPos) continue;
+      const d = (bPos.tileX - pos.tileX) ** 2 + (bPos.tileY - pos.tileY) ** 2;
+      if (d < bestDist) { bestDist = d; best = id; }
+    }
+    return best;
+  }
+
+  /** Find the nearest walkable surface stone/iron tile within the building's work radius */
+  private findSurfaceTile(
+    citizenId: EntityId, buildingId: EntityId, bld: any,
+  ): { x: number; y: number } | null {
+    const bPos = this.game.world.getComponent<any>(buildingId, 'position');
+    if (!bPos) return null;
+
+    const isQuarry = bld.type === BuildingType.QUARRY;
+    const radius = bld.workRadius || 20;
+    const cx = bPos.tileX + Math.floor((bld.width || 1) / 2);
+    const cy = bPos.tileY + Math.floor((bld.height || 1) / 2);
+    const pos = this.game.world.getComponent<any>(citizenId, 'position')!;
+    const r2 = radius * radius;
+    const candidates: { x: number; y: number; dist: number }[] = [];
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const tx = cx + dx;
+        const ty = cy + dy;
+        const tile = this.game.tileMap.get(tx, ty);
+        if (!tile) continue;
+        if (isQuarry) {
+          if (tile.type !== TileType.STONE || (tile.stoneAmount ?? 0) <= 0) continue;
+        } else {
+          if (tile.type !== TileType.IRON || (tile.ironAmount ?? 0) <= 0) continue;
+        }
+        if (!this.game.tileMap.isWalkable(tx, ty)) continue;
+        const d = (tx - pos.tileX) ** 2 + (ty - pos.tileY) ** 2;
+        candidates.push({ x: tx, y: ty, dist: d });
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    candidates.sort((a, b) => a.dist - b.dist);
+    const tryCount = Math.min(candidates.length, 5);
+    for (let i = 0; i < tryCount; i++) {
+      const target = candidates[i];
+      const result = this.game.pathfinder.findPath(pos.tileX, pos.tileY, target.x, target.y);
+      if (result.found && result.path.length > 0) {
+        return { x: target.x, y: target.y };
       }
     }
     return null;

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mechanics — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">
+      <h1>Game Mechanics</h1>
+      <p>Deep dives into how the game's systems work — explained in plain language.</p>
+    </div>
+
+    <!-- Construction -->
+    <div class="panel" id="construction">
+      <h2>Construction</h2>
+      <p>When you place a building, it starts as an incomplete structure. <strong>Laborers</strong> (unassigned workers) automatically go to construction sites and build them.</p>
+
+      <h3>Build Speed</h3>
+      <ul>
+        <li>More builders = faster construction. Each additional builder adds the same amount of work per cycle.</li>
+        <li><strong>Educated builders</strong> work faster than uneducated ones.</li>
+        <li>Citizens with the <strong>Hardworking</strong> trait build 15% faster.</li>
+        <li>Higher <strong>Building skill</strong> level provides a small additional speed bonus.</li>
+      </ul>
+
+      <div class="note">
+        <strong>Tip:</strong> Don't start too many buildings at once. Each construction site pulls laborers away from other projects, slowing everything down.
+      </div>
+
+      <h3>Resource Costs</h3>
+      <p>Building materials (logs, stone, iron) are deducted immediately when you place the building. If you cancel construction, you get the materials back.</p>
+    </div>
+
+    <!-- Upgrades -->
+    <div class="panel" id="upgrades">
+      <h2>Building Upgrades</h2>
+      <p>Many buildings can be upgraded to a <strong>Tier 2</strong> version for improved stats. Upgrades happen in-place — the building transforms without being demolished.</p>
+
+      <h3>How to Upgrade</h3>
+      <ol>
+        <li>Click on an upgradeable building to open its info panel.</li>
+        <li>If you have enough resources, the <strong>Upgrade</strong> button will be highlighted in gold.</li>
+        <li>Click Upgrade — resources are deducted and laborers begin work.</li>
+        <li>The building continues to function during the upgrade.</li>
+      </ol>
+
+      <h3>Available Upgrades</h3>
+      <div id="upgrade-list" class="grid" style="margin-top:0.5rem"></div>
+    </div>
+
+    <!-- Production & Efficiency -->
+    <div class="panel" id="production">
+      <h2>Production &amp; Efficiency</h2>
+      <p>Production buildings generate resources on a cycle timer. Several factors affect how efficiently they produce:</p>
+
+      <h3>Efficiency Factors</h3>
+      <ul>
+        <li><strong>Worker count:</strong> More workers (up to the building's max) means faster production.</li>
+        <li><strong>Tools:</strong> Workers without tools produce at <strong>50% speed</strong>. Keep your <a href="building.html?id=blacksmith">Blacksmith</a> supplied.</li>
+        <li><strong>Education:</strong> Educated workers produce 50% faster (75% with an <a href="building.html?id=academy">Academy</a>).</li>
+        <li><strong>Season:</strong> Gathering, hunting, fishing, and farming are affected by <a href="seasons.html">seasonal modifiers</a>.</li>
+        <li><strong>Skills:</strong> Workers gain XP and level up, adding +5% efficiency per level.</li>
+        <li><strong>Traits:</strong> The Hardworking trait adds +15%; Lazy subtracts 15%.</li>
+        <li><strong>Milestones:</strong> Achieving <a href="#milestones">milestones</a> grants permanent production bonuses.</li>
+        <li><strong>Weather:</strong> Droughts reduce crop efficiency to 30%; storms also slow production.</li>
+      </ul>
+
+      <div class="note tip">
+        Production pauses when storage is full. Make sure you have enough <a href="building.html?id=storage_barn">storage space</a>.
+      </div>
+    </div>
+
+    <!-- Storage & Spoilage -->
+    <div class="panel" id="storage">
+      <h2>Storage &amp; Spoilage</h2>
+      <p>Food spoils over time. The type of storage building determines how fast:</p>
+
+      <div class="stat-row">
+        <div class="stat">
+          <div class="stat-label">Stockpile / Open</div>
+          <div class="stat-value">100% <small>spoilage</small></div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Storage Barn</div>
+          <div class="stat-value">20% <small>spoilage</small></div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Stone Barn</div>
+          <div class="stat-value">10% <small>spoilage</small></div>
+        </div>
+      </div>
+
+      <p style="margin-top:0.7rem">The <strong>Harvest Festival</strong> (at the <a href="building.html?id=town_hall">Town Hall</a> in early autumn) halves spoilage rates for the rest of the season — stack this with a <a href="building.html?id=stone_barn">Stone Barn</a> for near-zero spoilage.</p>
+
+      <h3>Firewood &amp; Houses</h3>
+      <p>Houses are automatically restocked with firewood from your storage. They consume firewood to keep a fire burning, which provides warmth to sleeping citizens. Without firewood, houses go cold and citizens freeze.</p>
+    </div>
+
+    <!-- Trade -->
+    <div class="panel" id="trade">
+      <h2>Trade</h2>
+      <p>Build a <a href="building.html?id=trading_post">Trading Post</a> near water to attract merchants. When a merchant arrives:</p>
+      <ul>
+        <li>They bring 3 types of goods in varying quantities.</li>
+        <li>You can exchange your surplus resources for theirs based on trade values.</li>
+        <li>Merchants stay for about 1 day before departing.</li>
+        <li>Visits occur roughly once per year — don't miss them!</li>
+      </ul>
+
+      <details>
+        <summary>Resource Trade Values</summary>
+        <div class="detail-body">
+          <p style="font-size:0.85rem">Higher trade value = more purchasing power when bartering.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Resource</th><th>Trade Value</th></tr></thead>
+              <tbody id="trade-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Disease -->
+    <div class="panel" id="disease">
+      <h2>Disease</h2>
+      <p>Citizens can fall ill from poor conditions. Disease spreads between nearby citizens and can devastate an unprepared settlement.</p>
+
+      <h3>Risk Factors</h3>
+      <ul>
+        <li><strong>Malnourished:</strong> Low food increases disease chance significantly.</li>
+        <li><strong>Cold:</strong> Low warmth doubles disease risk.</li>
+        <li><strong>Weak:</strong> Low health doubles disease risk.</li>
+        <li><strong>Nomads:</strong> Arriving nomad groups carry a small chance of bringing disease.</li>
+      </ul>
+
+      <h3>Treatment</h3>
+      <ul>
+        <li>Build an <a href="building.html?id=herbalist">Herbalist</a> — they actively cure sick citizens within a 30-tile radius.</li>
+        <li><a href="resources.html#herbs">Herbs</a> are consumed automatically when citizens are sick.</li>
+        <li>Disease runs its course in about 2–3 days if untreated.</li>
+        <li>Cured citizens gain temporary immunity (about 1 year).</li>
+      </ul>
+
+      <div class="note tip">
+        The <strong>Frost Fair</strong> festival halves disease chance for the rest of winter — extremely valuable during the most vulnerable season.
+      </div>
+    </div>
+
+    <!-- Festivals -->
+    <div class="panel" id="festivals">
+      <h2>Festivals</h2>
+      <p>Build a <a href="building.html?id=town_hall">Town Hall</a> to unlock seasonal festivals. Each festival lasts 1 day and provides both an immediate happiness boost and a lingering seasonal bonus.</p>
+
+      <div id="festival-list" style="margin-top:0.5rem"></div>
+
+      <p style="margin-top:0.7rem">During festivals, all citizens receive <strong>+10 happiness</strong> immediately, plus a steady happiness gain while celebrating near the Town Hall. The special effect lingers for the rest of that season group (3 months).</p>
+    </div>
+
+    <!-- Milestones -->
+    <div class="panel" id="milestones">
+      <h2>Milestones</h2>
+      <p>Milestones are achievements that grant <strong>permanent bonuses</strong> to your settlement. Multiple milestone bonuses of the same type stack.</p>
+
+      <div class="table-wrap" style="margin-top:0.5rem">
+        <table>
+          <thead>
+            <tr><th>Milestone</th><th>Condition</th><th>Reward</th></tr>
+          </thead>
+          <tbody id="milestone-table"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Narrative Events -->
+    <div class="panel" id="events">
+      <h2>Narrative Events</h2>
+      <p>Random events occasionally occur in your settlement. A citizen might find extra food while wandering, tell a story that boosts morale, or discover hidden resources. These are small, positive moments that add flavor to your settlement's story.</p>
+    </div>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    // Upgrade list
+    const upgradeList = document.getElementById('upgrade-list');
+    ManualData.buildings.filter(b => b.upgradesTo).forEach(b => {
+      const target = ManualData.buildingById(b.upgradesTo);
+      if (!target) return;
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.style.padding = '0.7rem 0.9rem';
+      card.innerHTML = `
+        <div class="upgrade-arrow">
+          <a href="building.html?id=${b.id}">${b.name}</a>
+          <span class="arrow">&rarr;</span>
+          <a href="building.html?id=${target.id}">${target.name}</a>
+        </div>
+        <div style="font-size:0.8rem;color:var(--ink-3);margin-top:0.15rem">
+          ${ManualData.formatCost(b.upgradeCost)}
+        </div>
+      `;
+      upgradeList.appendChild(card);
+    });
+
+    // Trade table
+    const tradeTable = document.getElementById('trade-table');
+    const sorted = [...ManualData.resources]
+      .filter(r => r.tradeValue)
+      .sort((a, b) => b.tradeValue - a.tradeValue);
+    sorted.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.name}</td><td>${r.tradeValue}</td>`;
+      tradeTable.appendChild(tr);
+    });
+
+    // Festivals
+    const festivalList = document.getElementById('festival-list');
+    ManualData.festivals.forEach(f => {
+      const div = document.createElement('div');
+      div.className = 'recipe';
+      div.innerHTML = `
+        <div class="recipe-flow">
+          <span style="font-size:1.1rem;margin-right:0.2rem">${f.icon}</span>
+          <span class="recipe-item">${f.name}</span>
+          <span class="recipe-time">${f.season}</span>
+        </div>
+        <div style="font-size:0.85rem;color:var(--ink-2);margin-top:0.2rem">${f.description}</div>
+        <div style="font-size:0.83rem;color:var(--sage);margin-top:0.1rem"><strong>Bonus:</strong> ${f.effect}</div>
+      `;
+      festivalList.appendChild(div);
+    });
+
+    // Milestones
+    const milestoneTable = document.getElementById('milestone-table');
+    ManualData.milestones.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${m.name}</strong></td>
+        <td>${m.condition}</td>
+        <td style="color:var(--sage)">${m.reward}</td>
+      `;
+      milestoneTable.appendChild(tr);
+    });
+  </script>
+</body>
+</html>

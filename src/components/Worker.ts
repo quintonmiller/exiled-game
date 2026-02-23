@@ -8,4 +8,7 @@ export interface WorkerComponent {
   carryAmount: number;
   task: string | null;
   manuallyAssigned: boolean;
+  helperWorkplaceId?: EntityId; // set when quota-met, cleared when limit lifts
+  depositTargetId?: EntityId | null; // nearest storage building to deposit gathered resources
+  demolitionCarryQueue?: Array<{ type: ResourceType; amount: number }>;
 }

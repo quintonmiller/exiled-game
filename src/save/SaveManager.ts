@@ -67,9 +67,11 @@ export class SaveManager {
         isDusk: s.isDusk,
         isDawn: s.isDawn,
         nightAlpha: s.nightAlpha,
+        resourceLimits: { ...s.resourceLimits },
       },
 
-      globalResources: [...game.globalResources],
+      globalResources: [...game.resources.globalResources],
+      mineVeinState: game.getMineVeinStateSnapshot(),
       rngState: game.rng.getState(),
 
       tiles: game.tileMap.tiles.map(t => [

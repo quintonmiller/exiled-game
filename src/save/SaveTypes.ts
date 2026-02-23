@@ -1,6 +1,6 @@
 import { EventLogEntry } from '../types';
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 3;
 export const SAVE_KEY = 'banished_clone_save';
 
 // IndexedDB constants
@@ -45,9 +45,11 @@ export interface SaveData {
     isDusk: boolean;
     isDawn: boolean;
     nightAlpha: number;
+    resourceLimits: Record<string, number>;
   };
 
   globalResources: [string, number][];
+  mineVeinState?: [string, { remaining: number; max: number }][];
   rngState: number;
 
   // Map tiles — compact tuple: [type, trees, fertility, elevation, occupied(0|1), buildingId, stone, iron, blocksMovement?(0|1), berries?, mushrooms?, herbs?, fish?, wildlife?]

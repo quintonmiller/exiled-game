@@ -3,7 +3,7 @@ import { RECIPE_DEFS } from '../data/RecipeDefs';
 import { SEASON_DATA } from '../data/SeasonDefs';
 import { logger } from '../utils/Logger';
 import {
-  EDUCATION_BONUS, BuildingType, ResourceType,
+  EDUCATION_BONUS, ACADEMY_EDUCATION_BONUS, BuildingType, ResourceType,
   NO_TOOL_PRODUCTION_MULT, TOOL_WEAR_PER_TICK,
   FORESTER_REPLANT_TICKS, TREE_GROWTH_TICKS,
   PLANTING_DAY_CROP_MULT,
@@ -57,15 +57,18 @@ export class ProductionSystem {
       // Gathering buildings use physical gather-carry-deposit (driven by CitizenAISystem)
       // They still get workerCount/active updates for UI, but skip timer/recipe logic
       if (bld.type === BuildingType.GATHERING_HUT ||
+          bld.type === BuildingType.GATHERING_LODGE ||
           bld.type === BuildingType.HUNTING_CABIN ||
+          bld.type === BuildingType.HUNTING_LODGE ||
           bld.type === BuildingType.FISHING_DOCK ||
           bld.type === BuildingType.HERBALIST ||
-          bld.type === BuildingType.FORESTER_LODGE) {
+          bld.type === BuildingType.FORESTER_LODGE ||
+          bld.type === BuildingType.FORESTRY_HALL) {
         const workerCount = this.countWorkersAtBuilding(id);
         producer.workerCount = workerCount;
         producer.active = workerCount > 0;
-        // Forester special behavior: replant and grow trees
-        if (bld.type === BuildingType.FORESTER_LODGE) {
+        // Forester/Forestry Hall special behavior: replant and grow trees
+        if (bld.type === BuildingType.FORESTER_LODGE || bld.type === BuildingType.FORESTRY_HALL) {
           const pos = this.game.world.getComponent<any>(id, 'position');
           if (pos) this.updateForester(id, pos, bld, workerCount);
         }
@@ -99,10 +102,11 @@ export class ProductionSystem {
       let efficiency = workerCount / (bld.maxWorkers || 1);
       efficiency = Math.min(1, efficiency);
 
-      // Educated worker bonus
+      // Educated worker bonus (Academy gives a stronger bonus than School)
       const educatedCount = this.countEducatedWorkers(id);
       if (educatedCount > 0) {
-        efficiency *= 1 + (educatedCount / workerCount) * (EDUCATION_BONUS - 1);
+        const eduBonus = this.getEducationBonus();
+        efficiency *= 1 + (educatedCount / workerCount) * (eduBonus - 1);
       }
 
       // Personality trait work speed bonus/penalty
@@ -190,6 +194,11 @@ export class ProductionSystem {
           continue;
         }
 
+        // Pause production when all outputs for this recipe are at their limits.
+        if (this.areAllOutputsAtLimit(recipe.outputs)) {
+          continue;
+        }
+
         producer.timer = 0;
 
         // Check inputs
@@ -237,15 +246,18 @@ export class ProductionSystem {
         const hasMaster = this.hasSkillMaster(id, bld.type);
         for (const [res, amount] of Object.entries(recipe.outputs)) {
           let produced = amount as number;
-          if (educatedCount > 0 && (bld.type === BuildingType.WOOD_CUTTER || bld.type === BuildingType.BLACKSMITH)) {
-            produced = Math.ceil(produced * EDUCATION_BONUS);
+          if (educatedCount > 0 && (bld.type === BuildingType.WOOD_CUTTER || bld.type === BuildingType.BLACKSMITH ||
+              bld.type === BuildingType.SAWMILL || bld.type === BuildingType.IRON_WORKS)) {
+            produced = Math.ceil(produced * this.getEducationBonus());
           }
           // Mastery bonus: chance of extra output
           if (hasMaster && Math.random() < SKILL_MASTERY_BONUS_CHANCE) {
             produced += 1;
           }
-          this.game.addResource(res, produced);
-          logger.debug('PRODUCTION', `${bld.type} produced ${produced} ${res} (workers=${workerCount}, efficiency=${efficiency.toFixed(2)})`);
+          const added = this.game.addResourceRespectingLimit(res, produced);
+          if (added > 0) {
+            logger.debug('PRODUCTION', `${bld.type} produced ${added} ${res} (workers=${workerCount}, efficiency=${efficiency.toFixed(2)})`);
+          }
         }
 
         // Cycle recipe index for multi-recipe buildings
@@ -302,19 +314,25 @@ export class ProductionSystem {
       }
       // Harvest the crops
       const recipe = RECIPE_DEFS.find(r => r.buildingType === BuildingType.CROP_FIELD);
+      const cropOutputs = recipe ? Object.keys(recipe.outputs) : [];
+      if (cropOutputs.length > 0) {
+        const allCropAtLimit = cropOutputs.every(res => this.game.isResourceLimitMet(res));
+        const hayAtLimit = this.game.isResourceLimitMet(ResourceType.HAY);
+        if (allCropAtLimit && hayAtLimit) return;
+      }
       if (recipe) {
+        const educatedCount = this.countEducatedWorkers(id);
         for (const [res, amount] of Object.entries(recipe.outputs)) {
           let produced = Math.ceil((amount as number) * CROP_HARVEST_YIELD_MULT);
           // Educated bonus
-          const educatedCount = this.countEducatedWorkers(id);
           if (educatedCount > 0) {
-            produced = Math.ceil(produced * EDUCATION_BONUS);
+            produced = Math.ceil(produced * this.getEducationBonus());
           }
-          this.game.addResource(res, produced);
+          this.game.addResourceRespectingLimit(res, produced);
         }
       }
       // Harvest also produces hay (straw from wheat stalks)
-      this.game.addResource(ResourceType.HAY, HAY_FROM_WHEAT * workerCount);
+      this.game.addResourceRespectingLimit(ResourceType.HAY, HAY_FROM_WHEAT * workerCount);
       logger.info('PRODUCTION', `Crop field harvested — workers=${workerCount}`);
       // Reset to fallow after harvest
       producer.cropStage = CropStage.FALLOW;
@@ -381,12 +399,21 @@ export class ProductionSystem {
     this.foresterTimers = new Map(s.foresterTimers);
   }
 
+  private areAllOutputsAtLimit(outputs: Partial<Record<ResourceType, number>>): boolean {
+    const outputTypes = Object.keys(outputs);
+    if (outputTypes.length === 0) return false;
+    return outputTypes.every(type => this.game.isResourceLimitMet(type));
+  }
+
   private buildingNeedsTools(type: string): boolean {
     return [
       BuildingType.HUNTING_CABIN,
+      BuildingType.HUNTING_LODGE,
       BuildingType.FISHING_DOCK,
       BuildingType.WOOD_CUTTER,
+      BuildingType.SAWMILL,
       BuildingType.BLACKSMITH,
+      BuildingType.IRON_WORKS,
       BuildingType.CROP_FIELD,
     ].includes(type as any);
   }
@@ -483,5 +510,19 @@ export class ProductionSystem {
       }
     }
     return count;
+  }
+
+  /** Return the education bonus multiplier. Academy gives a higher bonus than School. */
+  private getEducationBonus(): number {
+    const buildings = this.game.world.getComponentStore<any>('building');
+    if (buildings) {
+      for (const [, bld] of buildings) {
+        if (bld.type === BuildingType.ACADEMY && bld.completed) {
+          const workerCount = bld.assignedWorkers?.length || 0;
+          if (workerCount > 0) return ACADEMY_EDUCATION_BONUS;
+        }
+      }
+    }
+    return EDUCATION_BONUS;
   }
 }

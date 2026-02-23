@@ -11,6 +11,7 @@ import {
   COOKED_MEAL_RESTORE, COOKED_MEAL_COST,
   COOKED_MEAL_WARMTH_BOOST, COOKED_MEAL_HAPPINESS_BOOST,
   COOKED_MEAL_ENERGY_BOOST,
+  HEATED_BUILDING_TYPES, HEATED_BUILDING_WARMTH_THRESHOLD,
 } from '../../constants';
 import { isCooked } from './CitizenUtils';
 
@@ -107,7 +108,68 @@ export class NeedsHandler {
   }
 
   seekWarmth(id: EntityId): void {
+    const family = this.game.world.getComponent<any>(id, 'family');
+    const warmBuildingId = this.findNearestWarmBuilding(id);
+
+    if (!warmBuildingId && !family?.homeId) {
+      this.goHome(id); // fallback (wanders if truly homeless)
+      return;
+    }
+
+    if (warmBuildingId && family?.homeId) {
+      // Pick whichever is closer
+      const pos = this.game.world.getComponent<any>(id, 'position');
+      const homePos = this.game.world.getComponent<any>(family.homeId, 'position');
+      const bldPos  = this.game.world.getComponent<any>(warmBuildingId, 'position');
+      if (pos && homePos && bldPos) {
+        const homeDist = Math.abs(pos.tileX - homePos.tileX) + Math.abs(pos.tileY - homePos.tileY);
+        const bldDist  = Math.abs(pos.tileX - bldPos.tileX)  + Math.abs(pos.tileY - bldPos.tileY);
+        if (bldDist < homeDist) {
+          this.goToWarmBuilding(id, warmBuildingId);
+          return;
+        }
+      }
+    } else if (warmBuildingId) {
+      this.goToWarmBuilding(id, warmBuildingId);
+      return;
+    }
+
     this.goHome(id);
+  }
+
+  /** Find the nearest completed heated building with warmth above threshold. */
+  private findNearestWarmBuilding(id: EntityId): EntityId | null {
+    const pos = this.game.world.getComponent<any>(id, 'position');
+    if (!pos) return null;
+
+    const buildings = this.game.world.getComponentStore<any>('building');
+    if (!buildings) return null;
+
+    let nearest: EntityId | null = null;
+    let bestDist = Infinity;
+
+    for (const [bldId, bld] of buildings) {
+      if (!bld.completed || !HEATED_BUILDING_TYPES.has(bld.type)) continue;
+      if ((bld.warmthLevel ?? 0) <= HEATED_BUILDING_WARMTH_THRESHOLD) continue;
+
+      const bldPos = this.game.world.getComponent<any>(bldId, 'position');
+      if (!bldPos) continue;
+
+      const dist = Math.abs(pos.tileX - bldPos.tileX) + Math.abs(pos.tileY - bldPos.tileY);
+      if (dist < bestDist) { bestDist = dist; nearest = bldId; }
+    }
+    return nearest;
+  }
+
+  /** Move toward a warm public building for shelter — no sleep trigger. */
+  private goToWarmBuilding(id: EntityId, buildingId: EntityId): void {
+    if (this.nav.isNearBuilding(id, buildingId)) {
+      this.nav.enterBuilding(id, buildingId);
+      const movement = this.game.world.getComponent<any>(id, 'movement');
+      if (movement) movement.stuckTicks = 0;
+    } else {
+      this.nav.goToBuilding(id, buildingId);
+    }
   }
 
   /** Go home and start sleeping */
@@ -116,17 +178,19 @@ export class NeedsHandler {
     if (family?.homeId != null) {
       if (this.nav.isNearBuilding(id, family.homeId)) {
         // At home — fall asleep inside building
-        citizen.isSleeping = true;
-        this.nav.enterBuilding(id, family.homeId);
-        const needs = this.game.world.getComponent<any>(id, 'needs');
-        if (needs) {
-          needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
+        if (this.nav.enterBuilding(id, family.homeId)) {
+          citizen.isSleeping = true;
+          const needs = this.game.world.getComponent<any>(id, 'needs');
+          if (needs) {
+            needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
+          }
+          const movement = this.game.world.getComponent<any>(id, 'movement')!;
+          movement.stuckTicks = 0;
+          return;
         }
-        const movement = this.game.world.getComponent<any>(id, 'movement')!;
-        movement.stuckTicks = 0;
+      } else if (this.nav.goToBuilding(id, family.homeId)) {
         return;
       }
-      if (this.nav.goToBuilding(id, family.homeId)) return;
     }
 
     // No home — find a house with room to sleep in
@@ -134,11 +198,13 @@ export class NeedsHandler {
     if (house !== null) {
       if (this.nav.isNearBuilding(id, house)) {
         // Sleep inside a house even if not assigned
-        citizen.isSleeping = true;
-        this.nav.enterBuilding(id, house);
+        if (this.nav.enterBuilding(id, house)) {
+          citizen.isSleeping = true;
+          return;
+        }
+      } else if (this.nav.goToBuilding(id, house)) {
         return;
       }
-      if (this.nav.goToBuilding(id, house)) return;
     }
 
     // Truly homeless — sleep where you are if exhausted
@@ -154,29 +220,30 @@ export class NeedsHandler {
 
   /** Go home (for warmth). Doesn't trigger sleep. */
   private goHome(id: EntityId): void {
-    const citizen = this.game.world.getComponent<any>(id, 'citizen')!;
     const family = this.game.world.getComponent<any>(id, 'family');
     if (family?.homeId != null) {
       if (this.nav.isNearBuilding(id, family.homeId)) {
-        this.nav.enterBuilding(id, family.homeId);
-        const needs = this.game.world.getComponent<any>(id, 'needs');
-        if (needs) {
-          needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
+        if (this.nav.enterBuilding(id, family.homeId)) {
+          const needs = this.game.world.getComponent<any>(id, 'needs');
+          if (needs) {
+            needs.warmth = Math.min(100, needs.warmth + HOME_WARMTH_GAIN);
+          }
+          const movement = this.game.world.getComponent<any>(id, 'movement')!;
+          movement.stuckTicks = 0;
+          return;
         }
-        const movement = this.game.world.getComponent<any>(id, 'movement')!;
-        movement.stuckTicks = 0;
+      } else if (this.nav.goToBuilding(id, family.homeId)) {
         return;
       }
-      if (this.nav.goToBuilding(id, family.homeId)) return;
     }
 
     const house = this.nav.findAvailableHouse(id);
     if (house !== null) {
       if (this.nav.isNearBuilding(id, house)) {
-        this.nav.enterBuilding(id, house);
+        if (this.nav.enterBuilding(id, house)) return;
+      } else if (this.nav.goToBuilding(id, house)) {
         return;
       }
-      if (this.nav.goToBuilding(id, house)) return;
     }
 
     this.nav.wander(id);

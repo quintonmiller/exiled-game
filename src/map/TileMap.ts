@@ -1,7 +1,8 @@
 import {
-  MAP_WIDTH, MAP_HEIGHT, TileType, ROAD_PATH_COST, FOREST_PATH_COST, DEFAULT_PATH_COST,
-  ROAD_SPEED_MULT, FOREST_SPEED_MULT, DEFAULT_SPEED_MULT, TREE_CONSUME_AMOUNT,
+  MAP_WIDTH, MAP_HEIGHT, TileType, ROAD_PATH_COST, BRIDGE_PATH_COST, FOREST_PATH_COST, DEFAULT_PATH_COST,
+  ROAD_SPEED_MULT, BRIDGE_SPEED_MULT, FOREST_SPEED_MULT, DEFAULT_SPEED_MULT, TREE_CONSUME_AMOUNT,
   MAX_BERRIES, MAX_MUSHROOMS, MAX_HERBS, MAX_FISH, MAX_WILDLIFE,
+  STONE_ROAD_SPEED_MULT, STONE_ROAD_PATH_COST,
 } from '../constants';
 import { TileData } from '../types';
 
@@ -53,7 +54,15 @@ export class TileMap {
   isWalkable(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const tile = this.tiles[this.idx(x, y)];
-    return tile.type !== TileType.WATER && tile.type !== TileType.RIVER && !tile.blocksMovement;
+    if (tile.type === TileType.BRIDGE) return true;
+    if (tile.type === TileType.STONE_ROAD) return true;
+    return (
+      tile.type !== TileType.WATER &&
+      tile.type !== TileType.RIVER &&
+      tile.type !== TileType.STONE &&
+      tile.type !== TileType.IRON &&
+      !tile.blocksMovement
+    );
   }
 
   isBuildable(x: number, y: number): boolean {
@@ -62,6 +71,10 @@ export class TileMap {
     return (
       tile.type !== TileType.WATER &&
       tile.type !== TileType.RIVER &&
+      tile.type !== TileType.BRIDGE &&
+      tile.type !== TileType.FOREST &&
+      tile.type !== TileType.STONE &&
+      tile.type !== TileType.IRON &&
       !tile.occupied
     );
   }
@@ -259,10 +272,20 @@ export class TileMap {
     }
   }
 
+  clearOccupied(x: number, y: number): void {
+    if (!this.inBounds(x, y)) return;
+    const tile = this.tiles[this.idx(x, y)];
+    tile.occupied = false;
+    tile.buildingId = null;
+    tile.blocksMovement = false;
+  }
+
   getPathCost(x: number, y: number): number {
     if (!this.inBounds(x, y)) return Infinity;
     const tile = this.tiles[this.idx(x, y)];
+    if (tile.type === TileType.STONE_ROAD) return STONE_ROAD_PATH_COST;
     if (tile.type === TileType.ROAD) return ROAD_PATH_COST;
+    if (tile.type === TileType.BRIDGE) return BRIDGE_PATH_COST;
     if (tile.type === TileType.FOREST) return FOREST_PATH_COST;
     return DEFAULT_PATH_COST;
   }
@@ -270,7 +293,9 @@ export class TileMap {
   getSpeedMultiplier(x: number, y: number): number {
     if (!this.inBounds(x, y)) return DEFAULT_SPEED_MULT;
     const tile = this.tiles[this.idx(x, y)];
+    if (tile.type === TileType.STONE_ROAD) return STONE_ROAD_SPEED_MULT;
     if (tile.type === TileType.ROAD) return ROAD_SPEED_MULT;
+    if (tile.type === TileType.BRIDGE) return BRIDGE_SPEED_MULT;
     if (tile.type === TileType.FOREST) return FOREST_SPEED_MULT;
     return DEFAULT_SPEED_MULT;
   }
@@ -278,8 +303,49 @@ export class TileMap {
   placeRoad(x: number, y: number): boolean {
     if (!this.inBounds(x, y)) return false;
     const tile = this.tiles[this.idx(x, y)];
-    if (tile.type === TileType.WATER || tile.type === TileType.RIVER) return false;
+    if (
+      tile.type === TileType.WATER ||
+      tile.type === TileType.RIVER ||
+      tile.type === TileType.BRIDGE ||
+      tile.type === TileType.FOREST ||
+      tile.type === TileType.STONE ||
+      tile.type === TileType.IRON
+    ) return false;
+    if (tile.occupied) return false;
+    if (tile.type === TileType.ROAD) return false;
     tile.type = TileType.ROAD;
+    tile.trees = 0;
+    return true;
+  }
+
+  placeBridge(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const tile = this.tiles[this.idx(x, y)];
+    if (tile.type !== TileType.WATER && tile.type !== TileType.RIVER) return false;
+    tile.type = TileType.BRIDGE;
+    return true;
+  }
+
+  /**
+   * Convert a tile to Stone Road.
+   * Accepts empty buildable tiles OR existing Dirt Road tiles (upgrade).
+   * Returns false if the tile cannot accept a stone road.
+   */
+  placeStoneRoad(x: number, y: number): boolean {
+    if (!this.inBounds(x, y)) return false;
+    const tile = this.tiles[this.idx(x, y)];
+    // Can upgrade dirt road or place on bare ground
+    if (
+      tile.type === TileType.WATER ||
+      tile.type === TileType.RIVER ||
+      tile.type === TileType.BRIDGE ||
+      tile.type === TileType.FOREST ||
+      tile.type === TileType.STONE ||
+      tile.type === TileType.IRON ||
+      tile.type === TileType.STONE_ROAD
+    ) return false;
+    if (tile.type !== TileType.ROAD && tile.occupied) return false;
+    tile.type = TileType.STONE_ROAD;
     tile.trees = 0;
     return true;
   }

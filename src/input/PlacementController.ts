@@ -1,8 +1,8 @@
 import type { Game } from '../Game';
 import { BUILDING_DEFS } from '../data/BuildingDefs';
-import { BuildingType, TILE_SIZE, ROAD_DRAG_MAX_PATH, FLEXIBLE_MIN_SIZE, FLEXIBLE_MAX_SIZE } from '../constants';
+import { BuildingType, TileType, TILE_SIZE, ROAD_DRAG_MAX_PATH, BRIDGE_DRAG_MAX_PATH, FLEXIBLE_MIN_SIZE, FLEXIBLE_MAX_SIZE } from '../constants';
 import type { DoorDef, Rotation } from '../types';
-import { getRotatedDims, getRotatedDoor } from '../utils/DoorUtils';
+import { getRotatedDims, getRotatedDoor, getDoorEntryTile } from '../utils/DoorUtils';
 
 export class PlacementController {
   private game: Game;
@@ -11,7 +11,7 @@ export class PlacementController {
   private dragStart: { tileX: number; tileY: number } | null = null;
   private dragging = false;
   private dragCancelled = false;
-  private dragGhosts: Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef }> = [];
+  private dragGhosts: Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef; entryTile?: { x: number; y: number } }> = [];
 
   constructor(game: Game) {
     this.game = game;
@@ -37,6 +37,8 @@ export class PlacementController {
 
   isDragType(type: BuildingType): boolean {
     if (type === BuildingType.ROAD) return true;
+    if (type === BuildingType.STONE_ROAD) return true;
+    if (type === BuildingType.BRIDGE) return true;
     const def = BUILDING_DEFS[type];
     return !!def?.flexible;
   }
@@ -72,6 +74,10 @@ export class PlacementController {
 
     if (placingType === BuildingType.ROAD) {
       this.endRoadDrag(def);
+    } else if (placingType === BuildingType.STONE_ROAD) {
+      this.endStoneRoadDrag(def);
+    } else if (placingType === BuildingType.BRIDGE) {
+      this.endBridgeDrag(def);
     } else if (def.flexible) {
       this.endFlexibleDrag(def);
     }
@@ -80,29 +86,109 @@ export class PlacementController {
   }
 
   private endRoadDrag(def: typeof BUILDING_DEFS[string]): void {
-    // Filter to only valid ghost tiles
+    // Filter to only valid ghost tiles that can accept a new road entity
     const validTiles = this.dragGhosts.filter(g => g.valid);
     if (validTiles.length === 0) return;
 
-    // Check total cost
-    const totalLogCost = validTiles.length * def.costLog;
-    const totalStoneCost = validTiles.length * def.costStone;
+    const tilesToPlace = validTiles.filter((ghost) => this.canPlaceRoad(ghost.x, ghost.y));
+    if (tilesToPlace.length === 0) return;
+
+    // Check total cost upfront
+    const totalLogCost = tilesToPlace.length * def.costLog;
+    const totalStoneCost = tilesToPlace.length * def.costStone;
     if (this.game.getResource('log') < totalLogCost) return;
     if (this.game.getResource('stone') < totalStoneCost) return;
 
-    let placed = 0;
-    for (const ghost of validTiles) {
-      if (this.game.tileMap.placeRoad(ghost.x, ghost.y)) {
-        placed++;
-      }
+    // Create a building entity per tile (workers will construct them)
+    for (const ghost of tilesToPlace) {
+      const tx = ghost.x;
+      const ty = ghost.y;
+      const id = this.game.world.createEntity();
+
+      this.game.world.addComponent(id, 'position', {
+        tileX: tx, tileY: ty,
+        pixelX: tx * TILE_SIZE, pixelY: ty * TILE_SIZE,
+      });
+      this.game.world.addComponent(id, 'building', {
+        type: def.type,
+        name: def.name,
+        category: def.category,
+        completed: false,
+        constructionProgress: 0,
+        constructionWork: def.constructionWork,
+        width: 1, height: 1,
+        maxWorkers: def.maxWorkers,
+        workRadius: def.workRadius,
+        assignedWorkers: [],
+        costLog: 0, costStone: 0, costIron: 0,
+        materialsDelivered: true,
+        rotation: 0,
+      });
+      this.game.world.addComponent(id, 'renderable', {
+        sprite: null, layer: 5, animFrame: 0, visible: true,
+      });
+
+      // Mark occupied but do NOT block movement (workers still walk here)
+      this.game.tileMap.markOccupied(tx, ty, 1, 1, id, false);
     }
 
-    // Deduct cost for tiles actually placed
-    if (placed > 0) {
-      if (def.costLog > 0) this.game.removeResource('log', placed * def.costLog);
-      if (def.costStone > 0) this.game.removeResource('stone', placed * def.costStone);
-      this.game.pathfinder.clearCache();
+    // Deduct resources upfront for all tiles
+    if (totalLogCost > 0) this.game.removeResource('log', totalLogCost);
+    if (totalStoneCost > 0) this.game.removeResource('stone', totalStoneCost);
+    this.game.pathfinder.clearCache();
+  }
+
+  private endStoneRoadDrag(def: typeof BUILDING_DEFS[string]): void {
+    const validTiles = this.dragGhosts.filter(g => g.valid);
+    if (validTiles.length === 0) return;
+
+    const tilesToPlace = validTiles.filter((ghost) => this.canPlaceStoneRoad(ghost.x, ghost.y));
+    if (tilesToPlace.length === 0) return;
+
+    // Check total cost upfront (only new tiles cost stone, upgrading from ROAD is same cost)
+    const totalStoneCost = tilesToPlace.length * def.costStone;
+    if (this.game.getResource('stone') < totalStoneCost) return;
+
+    // Create a building entity per tile (workers will construct them)
+    for (const ghost of tilesToPlace) {
+      const tx = ghost.x;
+      const ty = ghost.y;
+      const id = this.game.world.createEntity();
+
+      // If upgrading an existing dirt road, clear it first so tile is not occupied
+      const existingTile = this.game.tileMap.get(tx, ty);
+      if (existingTile?.type === TileType.ROAD) {
+        this.game.tileMap.clearOccupied(tx, ty);
+      }
+
+      this.game.world.addComponent(id, 'position', {
+        tileX: tx, tileY: ty,
+        pixelX: tx * TILE_SIZE, pixelY: ty * TILE_SIZE,
+      });
+      this.game.world.addComponent(id, 'building', {
+        type: def.type,
+        name: def.name,
+        category: def.category,
+        completed: false,
+        constructionProgress: 0,
+        constructionWork: def.constructionWork,
+        width: 1, height: 1,
+        maxWorkers: def.maxWorkers,
+        workRadius: def.workRadius,
+        assignedWorkers: [],
+        costLog: 0, costStone: 0, costIron: 0,
+        materialsDelivered: true,
+        rotation: 0,
+      });
+      this.game.world.addComponent(id, 'renderable', {
+        sprite: null, layer: 5, animFrame: 0, visible: true,
+      });
+
+      this.game.tileMap.markOccupied(tx, ty, 1, 1, id, false);
     }
+
+    if (totalStoneCost > 0) this.game.removeResource('stone', totalStoneCost);
+    this.game.pathfinder.clearCache();
   }
 
   private endFlexibleDrag(def: typeof BUILDING_DEFS[string]): void {
@@ -190,6 +276,209 @@ export class PlacementController {
     }
   }
 
+  private canPlaceBridge(x: number, y: number): boolean {
+    const tile = this.game.tileMap.get(x, y);
+    if (!tile) return false;
+    if (tile.type === TileType.BRIDGE) return false;
+    if (tile.occupied) return false;
+    return tile.type === TileType.WATER || tile.type === TileType.RIVER;
+  }
+
+  private endBridgeDrag(def: typeof BUILDING_DEFS[string]): void {
+    const validTiles = this.dragGhosts.filter(g => g.valid);
+    if (validTiles.length === 0) return;
+
+    // Exclude completed bridges and in-progress bridge entities
+    const tilesToPlace = validTiles.filter(g => {
+      const tile = this.game.tileMap.get(g.x, g.y);
+      return tile?.type !== TileType.BRIDGE && !tile?.occupied;
+    });
+    if (tilesToPlace.length === 0) return;
+
+    const totalLogCost = tilesToPlace.length * def.costLog;
+    const totalStoneCost = tilesToPlace.length * def.costStone;
+    if (this.game.getResource('log') < totalLogCost) return;
+    if (this.game.getResource('stone') < totalStoneCost) return;
+
+    // Create a building entity per water tile (workers will construct them from land)
+    for (const ghost of tilesToPlace) {
+      const tx = ghost.x;
+      const ty = ghost.y;
+      const id = this.game.world.createEntity();
+
+      this.game.world.addComponent(id, 'position', {
+        tileX: tx, tileY: ty,
+        pixelX: tx * TILE_SIZE, pixelY: ty * TILE_SIZE,
+      });
+      this.game.world.addComponent(id, 'building', {
+        type: def.type,
+        name: def.name,
+        category: def.category,
+        completed: false,
+        constructionProgress: 0,
+        constructionWork: def.constructionWork,
+        width: 1, height: 1,
+        maxWorkers: def.maxWorkers,
+        workRadius: def.workRadius,
+        assignedWorkers: [],
+        costLog: 0, costStone: 0, costIron: 0,
+        materialsDelivered: true,
+        rotation: 0,
+      });
+      this.game.world.addComponent(id, 'renderable', {
+        sprite: null, layer: 5, animFrame: 0, visible: true,
+      });
+
+      // Mark water tile as occupied; bridges don't block movement (water is already unwalkable)
+      this.game.tileMap.markOccupied(tx, ty, 1, 1, id, false);
+    }
+
+    if (totalLogCost > 0) this.game.removeResource('log', totalLogCost);
+    if (totalStoneCost > 0) this.game.removeResource('stone', totalStoneCost);
+    this.game.pathfinder.clearCache();
+  }
+
+  private computeBridgeDragGhosts(
+    mouseX: number, mouseY: number, def: typeof BUILDING_DEFS[string],
+  ): Array<{ x: number; y: number; w: number; h: number; valid: boolean }> {
+    const isWaterTile = (t: ReturnType<typeof this.game.tileMap.get>) =>
+      !!t && (t.type === TileType.WATER || t.type === TileType.RIVER || t.type === TileType.BRIDGE);
+
+    const startTile = this.game.tileMap.get(this.dragStart!.tileX, this.dragStart!.tileY);
+    const endTile = this.game.tileMap.get(mouseX, mouseY);
+    const startIsLand = !!startTile && !isWaterTile(startTile);
+    const endIsLand = !!endTile && !isWaterTile(endTile);
+
+    // Can't show anything useful if drag started in water
+    if (!startIsLand) {
+      this.dragGhosts = [];
+      return [];
+    }
+
+    const path = this.computeBridgePath(
+      this.dragStart!.tileX, this.dragStart!.tileY,
+      mouseX, mouseY,
+    );
+
+    // Need at least start + 1 water tile to show anything
+    if (path.length < 2) {
+      this.dragGhosts = [];
+      return [];
+    }
+
+    // Water tiles are everything after the start land tile.
+    // If end is also land, strip that endpoint too — those are the actual bridge tiles.
+    // If end is still water, include it so the preview tracks the cursor.
+    const waterTiles = (endIsLand ? path.slice(1, path.length - 1) : path.slice(1))
+      .slice(0, BRIDGE_DRAG_MAX_PATH);
+
+    if (waterTiles.length === 0) {
+      this.dragGhosts = [];
+      return [];
+    }
+
+    // L W+ L satisfied only when both endpoints are land
+    const patternComplete = startIsLand && endIsLand;
+
+    let newTileCount = 0;
+    for (const p of waterTiles) {
+      const tile = this.game.tileMap.get(p.x, p.y);
+      if (tile && tile.type !== TileType.BRIDGE && !tile.occupied) newTileCount++;
+    }
+    const canAfford = this.game.getResource('log') >= newTileCount * def.costLog &&
+                      this.game.getResource('stone') >= newTileCount * def.costStone;
+
+    const valid = patternComplete && canAfford;
+
+    this.dragGhosts = waterTiles.map(p => ({ x: p.x, y: p.y, w: 1, h: 1, valid }));
+    return this.dragGhosts;
+  }
+
+  /** A* through water/river tiles (inverse of computeRoadPath) */
+  private computeBridgePath(sx: number, sy: number, ex: number, ey: number): Array<{ x: number; y: number }> {
+    if (sx === ex && sy === ey) return [{ x: sx, y: sy }];
+
+    const tileMap = this.game.tileMap;
+    const maxIter = 2000;
+
+    const width = tileMap.width;
+    const toKey = (x: number, y: number) => y * width + x;
+
+    const gScore = new Map<number, number>();
+    const parent = new Map<number, number>();
+    const closed = new Set<number>();
+
+    const open: Array<{ x: number; y: number; f: number }> = [];
+    const heuristic = (x: number, y: number) => Math.abs(x - ex) + Math.abs(y - ey);
+
+    const startKey = toKey(sx, sy);
+    gScore.set(startKey, 0);
+    open.push({ x: sx, y: sy, f: heuristic(sx, sy) });
+
+    const DX = [0, 1, 0, -1];
+    const DY = [-1, 0, 1, 0];
+
+    let iterations = 0;
+
+    while (open.length > 0 && iterations < maxIter) {
+      iterations++;
+
+      let bestIdx = 0;
+      for (let i = 1; i < open.length; i++) {
+        if (open[i].f < open[bestIdx].f) bestIdx = i;
+      }
+      const current = open[bestIdx];
+      open[bestIdx] = open[open.length - 1];
+      open.pop();
+
+      const ck = toKey(current.x, current.y);
+      if (closed.has(ck)) continue;
+      closed.add(ck);
+
+      if (current.x === ex && current.y === ey) {
+        const path: Array<{ x: number; y: number }> = [];
+        let key = ck;
+        while (key !== undefined) {
+          const py = Math.floor(key / width);
+          const px = key % width;
+          path.push({ x: px, y: py });
+          const p = parent.get(key);
+          if (p === undefined) break;
+          key = p;
+        }
+        path.reverse();
+        return path;
+      }
+
+      const cg = gScore.get(ck)!;
+
+      for (let d = 0; d < 4; d++) {
+        const nx = current.x + DX[d];
+        const ny = current.y + DY[d];
+
+        if (!tileMap.inBounds(nx, ny)) continue;
+
+        const nk = toKey(nx, ny);
+        if (closed.has(nk)) continue;
+
+        const tile = tileMap.get(nx, ny)!;
+        // Allow the goal tile (land endpoint) through; intermediate tiles must be water/river/bridge
+        const isGoal = nx === ex && ny === ey;
+        if (!isGoal && tile.type !== TileType.WATER && tile.type !== TileType.RIVER && tile.type !== TileType.BRIDGE) continue;
+
+        const ng = cg + 1;
+        const prevG = gScore.get(nk);
+        if (prevG !== undefined && ng >= prevG) continue;
+
+        gScore.set(nk, ng);
+        parent.set(nk, ck);
+        open.push({ x: nx, y: ny, f: ng + heuristic(nx, ny) });
+      }
+    }
+
+    return [];
+  }
+
   cancelDrag(): void {
     // Mark as cancelled so the pending mouseup doesn't trigger tryPlace
     if (this.dragging) this.dragCancelled = true;
@@ -207,6 +496,9 @@ export class PlacementController {
 
     const def = BUILDING_DEFS[placingType];
     if (!def) return;
+
+    // Upgrade-only buildings (upgradeFrom set, no construction work) cannot be placed directly
+    if (def.upgradeFrom && def.constructionWork === 0) return;
 
     const rotation = this.game.state.placingRotation;
     const { w: rw, h: rh } = getRotatedDims(def.width, def.height, rotation);
@@ -226,13 +518,13 @@ export class PlacementController {
       return;
     }
 
-    if (!this.canPlace(tx, ty, rw, rh, def)) return;
-
-    // Compute rotated door
+    // Compute rotated door first (needed for placement validation)
     let rotatedDoor: DoorDef | undefined;
     if (def.doorDef) {
       rotatedDoor = getRotatedDoor(def.doorDef, def.width, def.height, rotation);
     }
+
+    if (!this.canPlace(tx, ty, rw, rh, def, rotatedDoor)) return;
 
     // Create building entity
     const id = this.game.world.createEntity();
@@ -307,23 +599,76 @@ export class PlacementController {
     this.game.pathfinder.clearCache();
   }
 
-  private canPlace(x: number, y: number, w: number, h: number, def: typeof BUILDING_DEFS[string]): boolean {
+  private canPlace(x: number, y: number, w: number, h: number, def: typeof BUILDING_DEFS[string], doorDef?: DoorDef): boolean {
     if (!this.game.tileMap.isAreaBuildable(x, y, w, h)) return false;
 
     if (def.requiresWater) {
       if (!this.game.tileMap.hasAdjacentWater(x, y, w, h)) return false;
     }
 
+    // Check that the building's own entry tile is accessible (walkable — roads are OK, buildings are not)
+    if (doorDef) {
+      const entry = getDoorEntryTile(x, y, doorDef);
+      if (!this.game.tileMap.isWalkable(entry.x, entry.y)) return false;
+    }
+
+    // Check that this building's footprint doesn't cover another building's door entry tile
+    if (!this.isAreaFreeOfDoorEntries(x, y, w, h)) return false;
+
     return true;
+  }
+
+  /** Returns false if placing a building at (x,y,w,h) would cover any existing building's door entry tile */
+  private isAreaFreeOfDoorEntries(x: number, y: number, w: number, h: number): boolean {
+    const buildings = this.game.world.getComponentStore<any>('building');
+    if (!buildings) return true;
+    const positions = this.game.world.getComponentStore<any>('position');
+    if (!positions) return true;
+
+    for (const [buildId, bld] of buildings) {
+      if (!bld.doorDef) continue;
+      const pos = positions.get(buildId);
+      if (!pos) continue;
+      const entry = getDoorEntryTile(pos.tileX, pos.tileY, bld.doorDef);
+      if (entry.x >= x && entry.x < x + w && entry.y >= y && entry.y < y + h) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Returns true if the tile is non-water land with at least one adjacent water/river tile */
+  private isLandAdjacentToWater(x: number, y: number): boolean {
+    const tile = this.game.tileMap.get(x, y);
+    if (!tile) return false;
+    if (tile.type === TileType.WATER || tile.type === TileType.RIVER || tile.type === TileType.BRIDGE) return false;
+    const DX = [0, 1, 0, -1];
+    const DY = [-1, 0, 1, 0];
+    for (let d = 0; d < 4; d++) {
+      const adj = this.game.tileMap.get(x + DX[d], y + DY[d]);
+      if (adj && (adj.type === TileType.WATER || adj.type === TileType.RIVER)) return true;
+    }
+    return false;
   }
 
   /** Check if a single tile can have a road placed on it */
   private canPlaceRoad(x: number, y: number): boolean {
     const tile = this.game.tileMap.get(x, y);
     if (!tile) return false;
-    // Can't place road on water/river
-    if (tile.type === 7 /* ROAD */) return false; // already a road
-    return this.game.tileMap.isWalkable(x, y);
+    if (tile.type === TileType.ROAD || tile.type === TileType.BRIDGE || tile.type === TileType.FOREST) return false;
+    return !tile.occupied && this.game.tileMap.isWalkable(x, y);
+  }
+
+  /** Check if a single tile can have a stone road placed on it (also valid on existing dirt roads) */
+  private canPlaceStoneRoad(x: number, y: number): boolean {
+    const tile = this.game.tileMap.get(x, y);
+    if (!tile) return false;
+    // Already a stone road or a bridge — can't place
+    if (tile.type === TileType.STONE_ROAD || tile.type === TileType.BRIDGE || tile.type === TileType.FOREST) return false;
+    // Upgrading an existing dirt road — always valid
+    if (tile.type === TileType.ROAD) return !tile.occupied;
+    // New tile — must be empty and walkable
+    return !tile.occupied && this.game.tileMap.isWalkable(x, y);
   }
 
   /** Lightweight 4-directional A* for road drag path */
@@ -400,9 +745,16 @@ export class PlacementController {
         const nk = toKey(nx, ny);
         if (closed.has(nk)) continue;
 
-        // Check passability: in bounds, not water/river, not blocked by building
+        // Check passability: in bounds, road-eligible terrain, not blocked by building
         const tile = tileMap.get(nx, ny)!;
-        if (tile.type === 2 /* WATER */ || tile.type === 5 /* RIVER */) continue;
+        if (
+          tile.type === TileType.WATER ||
+          tile.type === TileType.RIVER ||
+          tile.type === TileType.FOREST ||
+          tile.type === TileType.STONE ||
+          tile.type === TileType.IRON
+        ) continue;
+        if (tile.occupied && tile.type !== TileType.ROAD && tile.type !== TileType.STONE_ROAD) continue;
         if (tile.blocksMovement) continue;
 
         const ng = cg + 1;
@@ -419,7 +771,7 @@ export class PlacementController {
     return [];
   }
 
-  getGhostData(): Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef }> {
+  getGhostData(): Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef; entryTile?: { x: number; y: number } }> {
     const placingType = this.game.state.placingBuilding;
     if (!placingType) return [];
 
@@ -433,6 +785,10 @@ export class PlacementController {
     if (this.dragging && this.dragStart) {
       if (placingType === BuildingType.ROAD) {
         return this.computeRoadDragGhosts(tile.x, tile.y, def);
+      } else if (placingType === BuildingType.STONE_ROAD) {
+        return this.computeStoneRoadDragGhosts(tile.x, tile.y, def);
+      } else if (placingType === BuildingType.BRIDGE) {
+        return this.computeBridgeDragGhosts(tile.x, tile.y, def);
       } else if (def.flexible) {
         return this.computeFlexibleDragGhosts(tile.x, tile.y, def);
       }
@@ -452,24 +808,36 @@ export class PlacementController {
     const tx = tile.x - Math.floor(rw / 2);
     const ty = tile.y - Math.floor(rh / 2);
 
-    let valid: boolean;
-    if (placingType === BuildingType.ROAD) {
-      const t = this.game.tileMap.get(tx, ty);
-      valid = !!t && this.game.tileMap.isWalkable(tx, ty) &&
-        this.game.getResource('log') >= def.costLog;
-    } else {
-      valid = this.canPlace(tx, ty, rw, rh, def) &&
-        this.game.getResource('log') >= def.costLog &&
-        this.game.getResource('stone') >= def.costStone &&
-        this.game.getResource('iron') >= def.costIron;
-    }
-
+    // Compute doorDef first — needed for placement validation and entry tile rendering
     let doorDef: DoorDef | undefined;
     if (def.doorDef) {
       doorDef = getRotatedDoor(def.doorDef, def.width, def.height, rotation);
     }
 
-    return [{ x: tx, y: ty, w: rw, h: rh, valid, doorDef }];
+    let valid: boolean;
+    if (placingType === BuildingType.ROAD) {
+      const t = this.game.tileMap.get(tx, ty);
+      valid = !!t && this.canPlaceRoad(tx, ty) &&
+        this.game.getResource('log') >= def.costLog &&
+        this.game.getResource('stone') >= def.costStone;
+    } else if (placingType === BuildingType.STONE_ROAD) {
+      valid = this.canPlaceStoneRoad(tx, ty) &&
+        this.game.getResource('stone') >= def.costStone;
+    } else if (placingType === BuildingType.BRIDGE) {
+      valid = this.isLandAdjacentToWater(tile.x, tile.y);
+    } else {
+      valid = this.canPlace(tx, ty, rw, rh, def, doorDef) &&
+        this.game.getResource('log') >= def.costLog &&
+        this.game.getResource('stone') >= def.costStone &&
+        this.game.getResource('iron') >= def.costIron;
+    }
+
+    let entryTile: { x: number; y: number } | undefined;
+    if (doorDef) {
+      entryTile = getDoorEntryTile(tx, ty, doorDef);
+    }
+
+    return [{ x: tx, y: ty, w: rw, h: rh, valid, doorDef, entryTile }];
   }
 
   private computeRoadDragGhosts(
@@ -483,11 +851,10 @@ export class PlacementController {
     // Clamp to max path length
     const clamped = path.slice(0, ROAD_DRAG_MAX_PATH);
 
-    // Count how many tiles need to be placed (not already road)
+    // Count how many tiles can actually receive new road placement
     let newTileCount = 0;
     for (const p of clamped) {
-      const tile = this.game.tileMap.get(p.x, p.y);
-      if (tile && tile.type !== 7 /* ROAD */) newTileCount++;
+      if (this.canPlaceRoad(p.x, p.y)) newTileCount++;
     }
 
     const totalLogCost = newTileCount * def.costLog;
@@ -497,10 +864,38 @@ export class PlacementController {
 
     this.dragGhosts = clamped.map(p => {
       const tile = this.game.tileMap.get(p.x, p.y);
-      const isAlreadyRoad = tile?.type === 7; /* ROAD */
-      const isWalkable = !!tile && this.game.tileMap.isWalkable(p.x, p.y);
-      // Valid if: walkable (or already road) and we can afford the total
-      const valid = (isWalkable || isAlreadyRoad) && canAfford;
+      const isAlreadyRoad = tile?.type === TileType.ROAD;
+      // Valid if this tile already has a road, or can accept one now.
+      const valid = (isAlreadyRoad || this.canPlaceRoad(p.x, p.y)) && canAfford;
+      return { x: p.x, y: p.y, w: 1, h: 1, valid };
+    });
+
+    return this.dragGhosts;
+  }
+
+  private computeStoneRoadDragGhosts(
+    mouseX: number, mouseY: number, def: typeof BUILDING_DEFS[string],
+  ): Array<{ x: number; y: number; w: number; h: number; valid: boolean }> {
+    const path = this.computeRoadPath(
+      this.dragStart!.tileX, this.dragStart!.tileY,
+      mouseX, mouseY,
+    );
+
+    const clamped = path.slice(0, ROAD_DRAG_MAX_PATH);
+
+    // Count new tiles (not already STONE_ROAD, not occupied by something else)
+    let newTileCount = 0;
+    for (const p of clamped) {
+      if (this.canPlaceStoneRoad(p.x, p.y)) newTileCount++;
+    }
+
+    const totalStoneCost = newTileCount * def.costStone;
+    const canAfford = this.game.getResource('stone') >= totalStoneCost;
+
+    this.dragGhosts = clamped.map(p => {
+      const tile = this.game.tileMap.get(p.x, p.y);
+      const isAlreadyStoneRoad = tile?.type === TileType.STONE_ROAD;
+      const valid = (isAlreadyStoneRoad || this.canPlaceStoneRoad(p.x, p.y)) && canAfford;
       return { x: p.x, y: p.y, w: 1, h: 1, valid };
     });
 

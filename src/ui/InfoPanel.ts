@@ -1,7 +1,9 @@
 import type { Game } from '../Game';
-import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL } from '../constants';
+import { INFO_PANEL_WIDTH, HUD_HEIGHT, SKILL_XP_PER_LEVEL, SKILL_MAX_LEVEL, TRIMESTER_1_END, TRIMESTER_2_END, PREGNANCY_DURATION_TICKS, DEMOLITION_RECLAIM_RATIO } from '../constants';
 import { Settings } from '../Settings';
 import { EntityId } from '../types';
+import { estimateStorageContentsForBuilding } from '../utils/StorageContents';
+import { BUILDING_DEFS } from '../data/BuildingDefs';
 
 const PANEL_HEIGHT = 600;
 const BTN_WIDTH = 120;
@@ -22,6 +24,8 @@ export class InfoPanel {
   private assignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
   private unassignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
   private autoAssignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
+  private upgradeBtnRect: { x: number; y: number; w: number; h: number } | null = null;
+  private demolishBtnRect: { x: number; y: number; w: number; h: number } | null = null;
 
   // Clickable entity link rects
   private linkRects: LinkRect[] = [];
@@ -52,6 +56,23 @@ export class InfoPanel {
       const r = this.autoAssignBtnRect;
       if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
         this.autoAssignRandomWorker(id);
+        return true;
+      }
+    }
+
+    // Check [Upgrade] button on building panel
+    if (this.upgradeBtnRect) {
+      const r = this.upgradeBtnRect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        this.game.initiateUpgrade(id);
+        return true;
+      }
+    }
+
+    if (this.demolishBtnRect) {
+      const r = this.demolishBtnRect;
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        this.game.initiateDemolition(id);
         return true;
       }
     }
@@ -124,6 +145,8 @@ export class InfoPanel {
     this.assignBtnRect = null;
     this.unassignBtnRect = null;
     this.autoAssignBtnRect = null;
+    this.upgradeBtnRect = null;
+    this.demolishBtnRect = null;
     this.linkRects = [];
 
     const world = this.game.world;
@@ -158,6 +181,15 @@ export class InfoPanel {
       ctx.fillStyle = '#aaaaaa';
       ctx.fillText(`Age: ${citizen.age}  ${citizen.isMale ? 'Male' : 'Female'}`, leftX, textY);
       textY += 16;
+      if (citizen.age >= 13) {
+        const interestLabel = citizen.partnerPreference === 'both'
+          ? 'Male or Female'
+          : citizen.partnerPreference === 'same'
+            ? (citizen.isMale ? 'Male' : 'Female')
+            : (citizen.isMale ? 'Female' : 'Male');
+        ctx.fillText(`Interested In: ${interestLabel}`, leftX, textY);
+        textY += 16;
+      }
       ctx.fillText(`${citizen.isChild ? 'Child' : 'Adult'}  ${citizen.isEducated ? 'Educated' : 'Uneducated'}`, leftX, textY);
       textY += 16;
 
@@ -219,10 +251,10 @@ export class InfoPanel {
         const ticks = familyEarly.pregnancyTicks || 0;
         let trimesterLabel: string;
         let trimesterColor: string;
-        if (ticks < 1800) {
+        if (ticks < TRIMESTER_1_END) {
           trimesterLabel = 'T1';
           trimesterColor = '#aaddaa';
-        } else if (ticks < 3600) {
+        } else if (ticks < TRIMESTER_2_END) {
           trimesterLabel = 'T2';
           trimesterColor = '#dddd88';
         } else {
@@ -235,7 +267,7 @@ export class InfoPanel {
         ctx.fillText(`Pregnant (${trimesterLabel})`, leftX, textY);
         textY += 16;
 
-        const progressPct = Math.min(100, (ticks / 5400) * 100);
+        const progressPct = Math.min(100, (ticks / PREGNANCY_DURATION_TICKS) * 100);
         this.drawBar(ctx, leftX, textY, w - 20, 'Preg.', progressPct, trimesterColor);
         textY += 18;
       }
@@ -346,6 +378,13 @@ export class InfoPanel {
       const family = world.getComponent<any>(id, 'family');
       if (family) {
         ctx.font = '12px monospace';
+        const relationshipLabel = family.relationshipStatus
+          ? (family.relationshipStatus.charAt(0).toUpperCase() + family.relationshipStatus.slice(1))
+          : 'Single';
+        ctx.fillStyle = '#cccccc';
+        ctx.fillText(`Relationship: ${relationshipLabel}`, leftX, textY);
+        textY += 16;
+
         if (family.partnerId !== null && world.entityExists(family.partnerId)) {
           const partner = world.getComponent<any>(family.partnerId, 'citizen');
           ctx.fillStyle = '#cccccc';
@@ -427,14 +466,106 @@ export class InfoPanel {
       ctx.fillText(building.name, leftX, textY);
       textY += 20;
 
+      const buildingDef = BUILDING_DEFS[building.type];
+      if (buildingDef?.description) {
+        ctx.fillStyle = '#88aacc';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('Purpose:', leftX, textY);
+        textY += 14;
+
+        ctx.fillStyle = '#bbbbbb';
+        ctx.font = '11px monospace';
+        textY = this.drawWrappedText(ctx, buildingDef.description, leftX, textY, w - 20, 13);
+        textY += 6;
+      }
+
       ctx.font = '12px monospace';
       ctx.fillStyle = '#aaaaaa';
 
-      if (!building.completed) {
+      if (building.isDemolishing) {
+        const pct = ((building.demolitionProgress ?? 0) * 100);
+        this.drawBar(ctx, leftX, textY, w - 20, 'Demolition', pct, '#cc6655');
+        textY += 22;
+      } else if (!building.completed) {
         this.drawBar(ctx, leftX, textY, w - 20, 'Construction', building.constructionProgress * 100, '#ffaa44');
         textY += 22;
       } else {
         ctx.fillText('Completed', leftX, textY);
+        textY += 16;
+      }
+
+      // Upgrade section
+      if (building.completed && !building.isUpgrading && buildingDef?.upgradesTo) {
+        const upgDef = BUILDING_DEFS[buildingDef.upgradesTo];
+        textY += 4;
+        ctx.fillStyle = '#ddbb44';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`Tier 2: ${upgDef?.name || buildingDef.upgradesTo}`, leftX, textY);
+        textY += 14;
+
+        const costParts: string[] = [];
+        if (buildingDef.upgradeCostLog) costParts.push(`${buildingDef.upgradeCostLog} log`);
+        if (buildingDef.upgradeCostStone) costParts.push(`${buildingDef.upgradeCostStone} stone`);
+        if (buildingDef.upgradeCostIron) costParts.push(`${buildingDef.upgradeCostIron} iron`);
+        ctx.fillStyle = '#999999';
+        ctx.font = '10px monospace';
+        ctx.fillText(`Cost: ${costParts.join(', ')}`, leftX, textY);
+        textY += 14;
+
+        const canAfford =
+          this.game.getResource('log') >= (buildingDef.upgradeCostLog || 0) &&
+          this.game.getResource('stone') >= (buildingDef.upgradeCostStone || 0) &&
+          this.game.getResource('iron') >= (buildingDef.upgradeCostIron || 0);
+
+        const btnLabel = `Upgrade to ${upgDef?.name || buildingDef.upgradesTo}`;
+        ctx.font = 'bold 11px monospace';
+        const upgBtnW = Math.min(w - 20, ctx.measureText(btnLabel).width + 16);
+        const btnX = leftX;
+        const btnY = textY;
+        this.upgradeBtnRect = { x: btnX, y: btnY, w: upgBtnW, h: BTN_HEIGHT };
+
+        ctx.lineWidth = 1;
+        if (canAfford) {
+          ctx.strokeStyle = '#ddbb44';
+          ctx.fillStyle = 'rgba(80, 60, 10, 0.7)';
+        } else {
+          ctx.strokeStyle = '#666633';
+          ctx.fillStyle = 'rgba(40, 40, 20, 0.5)';
+        }
+        ctx.strokeRect(btnX, btnY, upgBtnW, BTN_HEIGHT);
+        ctx.fillRect(btnX, btnY, upgBtnW, BTN_HEIGHT);
+        ctx.fillStyle = canAfford ? '#ffdd44' : '#666644';
+        ctx.fillText(btnLabel, btnX + 6, btnY + 15);
+        textY += BTN_HEIGHT + 6;
+      } else if (building.isUpgrading) {
+        textY += 4;
+        ctx.fillStyle = '#ffbb44';
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText('UPGRADING...', leftX, textY);
+        textY += 16;
+        const pct = (building.upgradeProgress ?? 0) * 100;
+        this.drawBar(ctx, leftX, textY, w - 20, 'Progress', pct, '#ddbb44');
+        textY += 22;
+      }
+
+      if (building.completed && !building.isUpgrading && !building.isDemolishing) {
+        const btnX = leftX;
+        const btnY = textY;
+        this.demolishBtnRect = { x: btnX, y: btnY, w: BTN_WIDTH, h: BTN_HEIGHT };
+
+        ctx.strokeStyle = '#cc6666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+        ctx.fillStyle = 'rgba(80, 35, 35, 0.65)';
+        ctx.fillRect(btnX, btnY, BTN_WIDTH, BTN_HEIGHT);
+        ctx.fillStyle = '#ff9999';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('Demolish', btnX + 6, btnY + 15);
+        textY += BTN_HEIGHT + 4;
+
+        ctx.fillStyle = '#aa8888';
+        ctx.font = '10px monospace';
+        ctx.fillText(`Reclaim ~${Math.floor(DEMOLITION_RECLAIM_RATIO * 100)}% materials`, leftX, textY + 9);
         textY += 16;
       }
 
@@ -450,20 +581,39 @@ export class InfoPanel {
 
       // Storage capacity (for storage buildings)
       if (building.isStorage && building.storageCapacity) {
-        const used = this.game.getStorageUsed();
-        const cap = this.game.getStorageCapacity();
+        const estimate = estimateStorageContentsForBuilding(this.game.world, this.game.resources.globalResources, id, 5, 12);
+        const bldgUsed = estimate?.estimatedUsed ?? 0;
+        const bldgCap = estimate?.capacity ?? building.storageCapacity;
+
         ctx.fillStyle = '#aaaaaa';
         ctx.font = '12px monospace';
-        ctx.fillText(`Bldg Capacity: ${building.storageCapacity}`, leftX, textY);
+        ctx.fillText(`Capacity: ${Math.floor(bldgUsed)} / ${bldgCap}`, leftX, textY);
         textY += 16;
-        const fillPct = cap > 0 ? Math.min(100, (used / cap) * 100) : 100;
+        const fillPct = bldgCap > 0 ? Math.min(100, (bldgUsed / bldgCap) * 100) : 100;
         const fillColor = fillPct >= 100 ? '#ff4444' : fillPct > 80 ? '#ddaa22' : '#44aa44';
         this.drawBar(ctx, leftX, textY, w - 20, 'Fill', fillPct, fillColor);
         textY += 18;
-        ctx.fillStyle = '#888888';
-        ctx.font = '10px monospace';
-        ctx.fillText(`Global: ${Math.floor(used)} / ${cap}`, leftX, textY);
-        textY += 16;
+
+        ctx.fillStyle = '#cccccc';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText('Contents:', leftX, textY);
+        textY += 14;
+
+        if (estimate && estimate.topContents.length > 0) {
+          ctx.font = '11px monospace';
+          for (const item of estimate.topContents) {
+            ctx.fillStyle = item.color;
+            ctx.fillText('\u25A0', leftX, textY);
+            ctx.fillStyle = '#aaaaaa';
+            ctx.fillText(`${item.name}: ${Math.floor(item.amount)}`, leftX + 12, textY);
+            textY += 14;
+          }
+        } else {
+          ctx.fillStyle = '#777777';
+          ctx.font = '11px monospace';
+          ctx.fillText('Empty', leftX, textY);
+          textY += 14;
+        }
       }
 
       if (building.maxWorkers > 0) {
@@ -487,7 +637,7 @@ export class InfoPanel {
         }
 
         // [Auto-Assign] button (shown when completed building has capacity)
-        if (building.completed && assigned < building.maxWorkers) {
+        if (building.completed && assigned < building.maxWorkers && !this.game.isMineOrQuarryDepleted(id)) {
           textY += 4;
           const btnX = leftX;
           const btnY = textY;
@@ -577,6 +727,74 @@ export class InfoPanel {
         }
       }
 
+      // Mine / Quarry vein status
+      if (building.type === 'quarry' || building.type === 'mine') {
+        const mineProducer = world.getComponent<any>(id, 'producer');
+        if (mineProducer && building.completed) {
+          const isQuarry = building.type === 'quarry';
+          const remaining = isQuarry
+            ? (mineProducer.undergroundStone ?? 0)
+            : (mineProducer.undergroundIron ?? 0);
+          const max = mineProducer.maxUnderground ?? 1;
+          const ratio = max > 0 ? Math.max(0, remaining / max) : 0;
+          const pct = Math.floor(ratio * 100);
+
+          ctx.fillStyle = '#cccccc';
+          ctx.font = 'bold 11px monospace';
+          ctx.fillText('Vein Status:', leftX, textY);
+          textY += 14;
+
+          // Status text
+          let statusText: string;
+          let statusColor: string;
+          if (remaining <= 5) {
+            statusText = 'Vein exhausted — workers idling';
+            statusColor = '#cc4444';
+          } else if (ratio <= 0.3) {
+            statusText = `Underground — diminished output (${pct}%)`;
+            statusColor = '#ddaa22';
+          } else {
+            statusText = `Underground reserve: ${Math.floor(remaining)} (${pct}%)`;
+            statusColor = '#44cc88';
+          }
+          ctx.fillStyle = statusColor;
+          ctx.font = '10px monospace';
+          ctx.fillText(statusText, leftX, textY);
+          textY += 13;
+
+          // Vein bar
+          const barW = w - 20;
+          const barH = 6;
+          ctx.fillStyle = '#333';
+          ctx.fillRect(leftX, textY, barW, barH);
+          if (ratio > 0) {
+            const barColor = ratio > 0.5 ? '#44cc44' : ratio > 0.2 ? '#ddaa22' : '#cc4444';
+            ctx.fillStyle = barColor;
+            ctx.fillRect(leftX, textY, Math.floor(barW * ratio), barH);
+          }
+          textY += barH + 8;
+
+          // Check whether any workers are currently in surface mode
+          const workerStore = world.getComponentStore<any>('worker');
+          let hasSurfaceWorkers = false;
+          if (workerStore && building.assignedWorkers) {
+            for (const wId of building.assignedWorkers) {
+              const w2 = workerStore.get(wId);
+              if (w2?.gatherTargetTile !== null && w2?.gatherTargetTile !== undefined) {
+                hasSurfaceWorkers = true;
+                break;
+              }
+            }
+          }
+          if (hasSurfaceWorkers) {
+            ctx.fillStyle = '#88ccff';
+            ctx.font = '10px monospace';
+            ctx.fillText('Surface deposits nearby', leftX, textY);
+            textY += 13;
+          }
+        }
+      }
+
       // Livestock info
       if (building.type === 'chicken_coop' || building.type === 'pasture') {
         const lsData = this.game.livestockSystem.getLivestockData(id);
@@ -633,6 +851,7 @@ export class InfoPanel {
     const world = this.game.world;
     const bld = world.getComponent<any>(buildingId, 'building');
     if (!bld) return;
+    if (bld.completed && this.game.isMineOrQuarryDepleted(buildingId)) return;
 
     // Check worker capacity (for construction sites, cap at maxWorkers with min 1)
     const cap = bld.completed ? bld.maxWorkers : Math.max(bld.maxWorkers, 1);
@@ -683,6 +902,7 @@ export class InfoPanel {
       case 'eating': return 'Eating';
       case 'chatting': return 'Chatting';
       case 'building': return 'Constructing';
+      case 'upgrading': return 'Upgrading';
       case 'farming': return 'Farming';
       case 'gathering': return 'Gathering';
       case 'hunting': return 'Hunting';
@@ -726,5 +946,38 @@ export class InfoPanel {
     // Value text
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${Math.floor(value)}`, barX + barWidth + 4, y + 10);
+  }
+
+  private drawWrappedText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    maxWidth: number,
+    lineHeight: number,
+  ): number {
+    const words = text.split(/\s+/).filter(Boolean);
+    let line = '';
+
+    for (const word of words) {
+      const candidate = line.length > 0 ? `${line} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+        continue;
+      }
+
+      if (line.length > 0) {
+        ctx.fillText(line, x, y);
+        y += lineHeight;
+      }
+      line = word;
+    }
+
+    if (line.length > 0) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+    }
+
+    return y;
   }
 }

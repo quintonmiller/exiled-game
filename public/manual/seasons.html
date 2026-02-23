@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seasons &amp; Weather — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">
+      <h1>Seasons &amp; Weather</h1>
+      <p>The year in Exiled is divided into 12 sub-seasons. Each dramatically affects what your citizens can produce and how they survive.</p>
+    </div>
+
+    <!-- Time overview -->
+    <div class="panel">
+      <h2>Time in Exiled</h2>
+      <div class="stat-row">
+        <div class="stat"><div class="stat-label">In-game Day</div><div class="stat-value">60s <small>real time</small></div></div>
+        <div class="stat"><div class="stat-label">Month</div><div class="stat-value">5 days</div></div>
+        <div class="stat"><div class="stat-label">Season</div><div class="stat-value">3 months</div></div>
+        <div class="stat"><div class="stat-label">Year</div><div class="stat-value">60 days <small>~10 min</small></div></div>
+      </div>
+      <p style="margin-top:0.7rem">At 1× speed, one in-game day passes every 60 real seconds. A full year takes about 10 minutes. Use speed controls (keys 1–5) to accelerate time.</p>
+    </div>
+
+    <!-- Day/Night -->
+    <div class="panel" id="day-night">
+      <h2>Day &amp; Night Cycle</h2>
+      <p>Each day has a dawn, daytime, dusk, and night phase. The length of daylight varies by season:</p>
+      <ul>
+        <li><strong>Mid Summer:</strong> 90% daylight — long, productive days.</li>
+        <li><strong>Mid Winter:</strong> 25% daylight — very short days, mostly darkness.</li>
+      </ul>
+      <p>Citizens only work during daytime. At night, they go home to sleep and recover energy. Ensure everyone has a <a href="building.html?id=wooden_house">house</a> — sleeping outdoors is dangerous in winter.</p>
+    </div>
+
+    <!-- Season overview -->
+    <div class="panel">
+      <h2>The Four Seasons</h2>
+      <div id="season-groups"></div>
+    </div>
+
+    <!-- Season detail table -->
+    <details>
+      <summary>Full Season Data Table</summary>
+      <div class="detail-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Sub-Season</th>
+                <th>Temp</th>
+                <th>Crops</th>
+                <th>Gather</th>
+                <th>Hunt</th>
+                <th>Fish</th>
+                <th>Herbs</th>
+                <th>Snow</th>
+                <th>Daylight</th>
+              </tr>
+            </thead>
+            <tbody id="season-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <!-- Seasonal Strategy -->
+    <div class="panel">
+      <h2>Seasonal Strategy</h2>
+      <div class="row">
+        <div>
+          <h3 style="color:#6aab78">Spring</h3>
+          <ul>
+            <li>Plant <a href="building.html?id=crop_field">crop fields</a> as soon as possible.</li>
+            <li>Resume gathering and foraging.</li>
+            <li>Repair any damage from winter storms.</li>
+            <li>If you have a <a href="building.html?id=town_hall">Town Hall</a>, enjoy the <strong>Planting Day</strong> festival (+50% crop growth).</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color:#cc8e28">Summer</h3>
+          <ul>
+            <li>Peak production season — maximize gathering and farming.</li>
+            <li>Watch for <strong>drought</strong> events that cut crop growth to 30%.</li>
+            <li>Long days mean more work hours.</li>
+            <li><strong>Midsummer</strong> festival doubles all happiness gains.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color:#cc5544">Autumn</h3>
+          <ul>
+            <li><strong>Harvest crops before winter kills them!</strong></li>
+            <li>Best hunting season — stock up on venison.</li>
+            <li>Fill barns with food and firewood.</li>
+            <li><strong>Harvest Festival</strong> halves food spoilage.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 style="color:#6898e0">Winter</h3>
+          <ul>
+            <li>Survival mode — focus on warmth and health.</li>
+            <li>Keep houses stocked with firewood.</li>
+            <li>Minimal production; rely on stockpiles.</li>
+            <li><strong>Frost Fair</strong> halves disease chance.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weather Events -->
+    <div class="panel" id="weather">
+      <h2>Weather Events</h2>
+      <p>Random weather events can disrupt your settlement. They can't be prevented, only prepared for:</p>
+      <div id="weather-list"></div>
+    </div>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    // Render season groups
+    const groupsEl = document.getElementById('season-groups');
+    const groups = ['Spring', 'Summer', 'Autumn', 'Winter'];
+    const groupColors = { Spring: '#6aab78', Summer: '#cc8e28', Autumn: '#cc5544', Winter: '#6898e0' };
+    const groupDescriptions = {
+      Spring: 'The thaw brings new life. Crops can be planted, and foraging slowly resumes. Temperatures climb from near-freezing to comfortable.',
+      Summer: 'The most productive season. Long days, warm temperatures, and peak gathering. Watch for droughts.',
+      Autumn: 'Harvest time. Crops must be collected before winter. Hunting is at its best. Stock up on everything.',
+      Winter: 'The great test. Freezing temperatures, short days, and almost no natural food production. Survival depends on preparation.',
+    };
+
+    groups.forEach(group => {
+      const subs = ManualData.seasons.filter(s => s.group === group);
+      const div = document.createElement('div');
+      div.style.cssText = 'margin-bottom:1rem;';
+
+      let html = `<h3 style="color:${groupColors[group]};margin-bottom:0.3rem">${group}</h3>`;
+      html += `<p style="font-size:0.88rem">${groupDescriptions[group]}</p>`;
+
+      // Mini productivity bars
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.4rem;margin-top:0.5rem">';
+      subs.forEach(s => {
+        html += `<div class="card" style="padding:0.5rem 0.7rem">`;
+        html += `<div style="font-size:0.78rem;font-weight:500;color:var(--ink);margin-bottom:0.3rem">${s.name}</div>`;
+        html += `<div style="font-size:0.78rem;color:var(--ink-3)">${s.temp > 0 ? '+' : ''}${s.temp}°C</div>`;
+
+        // Activity bars
+        const activities = [
+          { label: 'Crops', val: s.crop, color: '#6aab78' },
+          { label: 'Gather', val: s.gather, color: '#aa7733' },
+          { label: 'Hunt', val: s.hunt, color: '#cc5544' },
+          { label: 'Fish', val: s.fish, color: '#6898e0' },
+        ];
+        activities.forEach(a => {
+          html += `<div style="display:flex;align-items:center;gap:0.3rem;margin-top:0.2rem">`;
+          html += `<span style="font-size:0.68rem;width:38px;color:var(--ink-3)">${a.label}</span>`;
+          html += `<div style="flex:1;height:4px;background:var(--surf-2);border-radius:2px;overflow:hidden">`;
+          html += `<div style="width:${a.val * 100}%;height:100%;background:${a.color};border-radius:2px"></div>`;
+          html += `</div>`;
+          html += `<span style="font-size:0.65rem;color:var(--ink-3);width:26px;text-align:right">${Math.round(a.val * 100)}%</span>`;
+          html += `</div>`;
+        });
+
+        html += `</div>`;
+      });
+      html += '</div>';
+
+      div.innerHTML = html;
+      groupsEl.appendChild(div);
+    });
+
+    // Season data table
+    const tableBody = document.getElementById('season-table');
+    ManualData.seasons.forEach(s => {
+      const tr = document.createElement('tr');
+      const pct = v => v > 0 ? `${Math.round(v * 100)}%` : '\u2014';
+      tr.innerHTML = `
+        <td><strong>${s.name}</strong></td>
+        <td>${s.temp > 0 ? '+' : ''}${s.temp}°C</td>
+        <td>${pct(s.crop)}</td>
+        <td>${pct(s.gather)}</td>
+        <td>${pct(s.hunt)}</td>
+        <td>${pct(s.fish)}</td>
+        <td>${pct(s.herbs)}</td>
+        <td>${s.snow ? 'Yes' : 'No'}</td>
+        <td>${Math.round(s.dayLength * 100)}%</td>
+      `;
+      tableBody.appendChild(tr);
+    });
+
+    // Weather events
+    const weatherList = document.getElementById('weather-list');
+    ManualData.weatherEvents.forEach(w => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin-bottom:0.7rem;';
+      div.innerHTML = `
+        <h3>${w.name}</h3>
+        <p style="font-size:0.87rem;margin-bottom:0.3rem">${w.description} <span style="color:var(--ink-3);font-size:0.82rem">(${w.seasons})</span></p>
+        <ul style="font-size:0.85rem;margin:0">
+          ${w.effects.map(e => `<li>${e}</li>`).join('')}
+        </ul>
+      `;
+      weatherList.appendChild(div);
+    });
+  </script>
+</body>
+</html>

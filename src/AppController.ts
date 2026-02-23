@@ -67,6 +67,10 @@ export class AppController {
     this.startScreen = new StartScreen(this.canvas, this.saveManager);
     this.startScreen.onNewGame = (seed) => this.startNewGame(seed);
     this.startScreen.onLoadGame = () => this.loadGame();
+    this.startScreen.onManual = () => {
+      const manualUrl = new URL('manual/index.html', window.location.href);
+      window.open(manualUrl.toString(), '_blank', 'noopener');
+    };
     this.startScreen.start();
   }
 
@@ -174,13 +178,18 @@ export class AppController {
   private openPauseMenu(): void {
     if (!this.game) return;
     this.game.state.paused = true;
+    this.game.loop.setSpeed(0);
     this.pauseMenu.show();
   }
 
   private resumeGame(): void {
     if (!this.game) return;
     this.pauseMenu.hide();
+    if (this.game.state.speed <= 0) {
+      this.game.state.speed = 1;
+    }
     this.game.state.paused = false;
+    this.game.loop.setSpeed(this.game.state.speed);
     this.canvas.style.cursor = 'default';
   }
 
@@ -247,6 +256,11 @@ export class AppController {
     this.pauseMenu.onSettings = () => {
       this.pauseMenu.hide();
       this.settingsPanel.show();
+    };
+
+    this.pauseMenu.onManual = () => {
+      const manualUrl = new URL('manual/index.html', window.location.href);
+      window.open(manualUrl.toString(), '_blank', 'noopener');
     };
 
     this.pauseMenu.onMainMenu = async () => {

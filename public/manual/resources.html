@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resources — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">
+      <h1>Resources</h1>
+      <p>Exiled features 27 different resources across 7 categories. Understanding where they come from and what they're used for is key to a thriving settlement.</p>
+    </div>
+
+    <div id="resource-sections"></div>
+
+    <div class="panel" style="margin-top:1.5rem;">
+      <h2>Food &amp; Cooking</h2>
+      <p>Citizens eat food to satisfy their hunger need. There are three tiers of food:</p>
+      <div class="row">
+        <div>
+          <h3>Raw Food</h3>
+          <p>Berries, mushrooms, roots, venison, fish, wheat, cabbage, potatoes. Eaten as-is. Restores a moderate amount of hunger.</p>
+        </div>
+        <div>
+          <h3>Cooked Food</h3>
+          <p>Bread, fish stew, berry pie, vegetable soup, cheese. Made at a <a href="building.html?id=bakery">Bakery</a> or <a href="building.html?id=dairy">Dairy</a>. Restores 50% more hunger plus warmth, happiness, and energy bonuses.</p>
+        </div>
+        <div>
+          <h3>Animal Food</h3>
+          <p>Eggs and milk from <a href="building.html?id=chicken_coop">Chicken Coops</a> and <a href="building.html?id=pasture">Pastures</a>. Edible as-is; milk can also be processed into cheese.</p>
+        </div>
+      </div>
+      <div class="note tip">
+        <strong>Diet variety matters.</strong> Citizens eating 3+ different food types get a happiness boost. A monotonous diet of one food type causes unhappiness.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Production Chains</h2>
+      <p>Resources flow through production chains. Here are the key ones:</p>
+
+      <h3>Warmth Chain</h3>
+      <div class="recipe">
+        <div class="recipe-flow">
+          <span class="recipe-item">Trees</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=forester_lodge">Forester</a>: Logs</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=wood_cutter">Wood Cutter</a>: Firewood</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item">Houses (warmth)</span>
+        </div>
+      </div>
+
+      <h3 style="margin-top:0.8rem">Tool Chain</h3>
+      <div class="recipe">
+        <div class="recipe-flow">
+          <span class="recipe-item"><a href="building.html?id=mine">Mine</a>: Iron</span>
+          <span class="recipe-item">+ Logs</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=blacksmith">Blacksmith</a>: Tools</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item">Workers (+50% productivity)</span>
+        </div>
+      </div>
+
+      <h3 style="margin-top:0.8rem">Clothing Chain</h3>
+      <div class="recipe">
+        <div class="recipe-flow">
+          <span class="recipe-item"><a href="building.html?id=hunting_cabin">Hunters</a>: Leather</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=tailor">Tailor</a>: Coats</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item">Citizens (warmth protection)</span>
+        </div>
+      </div>
+
+      <h3 style="margin-top:0.8rem">Livestock Chain</h3>
+      <div class="recipe">
+        <div class="recipe-flow">
+          <span class="recipe-item"><a href="building.html?id=crop_field">Crops</a>: Wheat + Hay</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=pasture">Cattle</a>: Milk</span>
+          <span class="recipe-arrow">&rarr;</span>
+          <span class="recipe-item"><a href="building.html?id=dairy">Dairy</a>: Cheese</span>
+        </div>
+      </div>
+    </div>
+
+    <details>
+      <summary>Full Resource Data Table</summary>
+      <div class="detail-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Resource</th>
+                <th>Category</th>
+                <th>Weight</th>
+                <th>Trade Value</th>
+              </tr>
+            </thead>
+            <tbody id="resource-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>All Production Recipes</summary>
+      <div class="detail-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Building</th>
+                <th>Inputs</th>
+                <th>Outputs</th>
+                <th>Cycle Time</th>
+                <th>Seasonal</th>
+              </tr>
+            </thead>
+            <tbody id="recipe-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    // Render resource sections by category
+    const sectionsEl = document.getElementById('resource-sections');
+    ManualData.resourceCategories.forEach(cat => {
+      const items = ManualData.resources.filter(r => r.category === cat);
+      if (!items.length) return;
+
+      const section = document.createElement('div');
+      section.className = 'panel';
+      section.id = cat.toLowerCase().replace(/[^a-z]+/g, '-');
+
+      let html = `<h2>${cat}</h2>`;
+      html += '<div class="grid-3">';
+
+      items.forEach(r => {
+        html += `<div class="card resource-card" id="${r.id}">`;
+        html += `<h3>${r.name}</h3>`;
+        html += `<p class="source">${r.source}</p>`;
+        html += `<p style="font-size:0.85rem">${r.uses}</p>`;
+        if (r.seasonal) {
+          html += `<p style="font-size:0.8rem;color:var(--ink-3);font-style:italic">${r.seasonal}</p>`;
+        }
+        html += '</div>';
+      });
+
+      html += '</div>';
+      section.innerHTML = html;
+      sectionsEl.appendChild(section);
+    });
+
+    // Resource data table
+    const tableBody = document.getElementById('resource-table');
+    ManualData.resources.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${r.name}</strong></td>
+        <td>${r.category}</td>
+        <td>${r.weight}</td>
+        <td>${r.tradeValue}</td>
+      `;
+      tableBody.appendChild(tr);
+    });
+
+    // Recipe table
+    const recipeBody = document.getElementById('recipe-table');
+    ManualData.recipes.forEach(r => {
+      const bld = ManualData.buildingById(r.buildingId);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><a href="building.html?id=${r.buildingId}">${bld ? bld.name : r.buildingId}</a></td>
+        <td>${ManualData.formatInputs(r.inputs)}</td>
+        <td>${ManualData.formatOutputs(r.outputs)}</td>
+        <td>${ManualData.ticksToTime(r.cycleTicks)}</td>
+        <td>${r.seasonal ? 'Yes' : 'No'}</td>
+      `;
+      recipeBody.appendChild(tr);
+    });
+  </script>
+</body>
+</html>

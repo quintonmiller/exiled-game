@@ -3,10 +3,10 @@ import {
   TileType, NATURAL_REGROWTH_CHANCE, MAP_WIDTH, MAP_HEIGHT,
   BUILDING_DECAY_PER_TICK, BUILDING_MAX_DURABILITY,
   ENVIRONMENT_TILES_PER_TICK, MAX_TREE_DENSITY, FOREST_GROWTH_CHANCE,
-  BUILDING_DECAY_CHECK_INTERVAL, Profession, Season,
+  BUILDING_DECAY_CHECK_INTERVAL, Profession, TICKS_PER_SUB_SEASON,
   MAX_BERRIES, MAX_MUSHROOMS, MAX_HERBS, MAX_FISH, MAX_WILDLIFE,
-  BERRY_REGROWTH_CHANCE, MUSHROOM_REGROWTH_CHANCE, HERB_REGROWTH_CHANCE,
-  FISH_REGROWTH_CHANCE, WILDLIFE_REGROWTH_CHANCE,
+  BERRY_LIFECYCLE, MUSHROOM_LIFECYCLE, HERB_LIFECYCLE, FISH_LIFECYCLE, WILDLIFE_LIFECYCLE,
+  type ResourceLifecycle,
 } from '../constants';
 
 /**
@@ -35,11 +35,12 @@ export class EnvironmentSystem {
 
       const tile = tileMap.tiles[idx];
 
+      const x = idx % MAP_WIDTH;
+      const y = Math.floor(idx / MAP_WIDTH);
+
       // Natural regrowth: grass tiles adjacent to forest may sprout a tree
       if (tile.type === TileType.GRASS && !tile.occupied) {
         if (Math.random() < NATURAL_REGROWTH_CHANCE) {
-          const x = idx % MAP_WIDTH;
-          const y = Math.floor(idx / MAP_WIDTH);
           if (this.hasAdjacentForest(x, y)) {
             tile.type = TileType.FOREST;
             tile.trees = 1;
@@ -54,50 +55,17 @@ export class EnvironmentSystem {
         }
       }
 
-      // ── Map resource regrowth ──
-      const subSeason = this.game.state.subSeason;
-      const isSpring = subSeason >= Season.EARLY_SPRING && subSeason <= Season.LATE_SPRING;
-      const isSummer = subSeason >= Season.EARLY_SUMMER && subSeason <= Season.LATE_SUMMER;
-      const isAutumn = subSeason >= Season.EARLY_AUTUMN && subSeason <= Season.LATE_AUTUMN;
-      const isWinter = subSeason >= Season.EARLY_WINTER && subSeason <= Season.LATE_WINTER;
+      // ── Resource lifecycle ──
+      const ssFloat = this.game.state.subSeason + this.game.state.tickInSubSeason / TICKS_PER_SUB_SEASON;
 
-      // Berry regrowth: spring/summer on FOREST/FERTILE tiles
-      if ((isSpring || isSummer) && tile.berries < MAX_BERRIES
-          && (tile.type === TileType.FOREST || tile.type === TileType.FERTILE)
-          && Math.random() < BERRY_REGROWTH_CHANCE) {
-        tile.berries++;
-      }
+      this.applyLifecycle(tile, 'berries',   BERRY_LIFECYCLE,    MAX_BERRIES,   ssFloat, x, y);
+      this.applyLifecycle(tile, 'mushrooms', MUSHROOM_LIFECYCLE, MAX_MUSHROOMS, ssFloat, x, y);
+      this.applyLifecycle(tile, 'herbs',     HERB_LIFECYCLE,     MAX_HERBS,     ssFloat, x, y);
 
-      // Mushroom regrowth: peaks autumn, small chance spring/summer on FOREST tiles
-      if (tile.type === TileType.FOREST && tile.mushrooms < MAX_MUSHROOMS) {
-        const chance = isAutumn ? MUSHROOM_REGROWTH_CHANCE * 3 : (isWinter ? 0 : MUSHROOM_REGROWTH_CHANCE);
-        if (chance > 0 && Math.random() < chance) {
-          tile.mushrooms++;
-        }
-      }
-
-      // Herb regrowth: spring/summer on FOREST/GRASS/FERTILE tiles
-      if ((isSpring || isSummer) && tile.herbs < MAX_HERBS
-          && (tile.type === TileType.FOREST || tile.type === TileType.GRASS || tile.type === TileType.FERTILE)
-          && Math.random() < HERB_REGROWTH_CHANCE) {
-        tile.herbs++;
-      }
-
-      // Fish regeneration: year-round on WATER/RIVER tiles, slower in winter
-      if ((tile.type === TileType.WATER || tile.type === TileType.RIVER) && tile.fish < MAX_FISH) {
-        const fishChance = isWinter ? FISH_REGROWTH_CHANCE * 0.3 : FISH_REGROWTH_CHANCE;
-        if (Math.random() < fishChance) {
-          tile.fish++;
-        }
-      }
-
-      // Wildlife regeneration: year-round on FOREST/GRASS tiles
-      if ((tile.type === TileType.FOREST || tile.type === TileType.GRASS) && tile.wildlife < MAX_WILDLIFE) {
-        const wildlifeChance = isWinter ? WILDLIFE_REGROWTH_CHANCE * 0.5 : WILDLIFE_REGROWTH_CHANCE;
-        if (Math.random() < wildlifeChance) {
-          tile.wildlife++;
-        }
-      }
+      if (tile.type === TileType.WATER || tile.type === TileType.RIVER)
+        this.applyLifecycle(tile, 'fish',     FISH_LIFECYCLE,     MAX_FISH,      ssFloat, x, y);
+      if (tile.type === TileType.FOREST || tile.type === TileType.GRASS)
+        this.applyLifecycle(tile, 'wildlife', WILDLIFE_LIFECYCLE, MAX_WILDLIFE,  ssFloat, x, y);
     }
 
     // Building decay — check every 10 ticks
@@ -131,6 +99,7 @@ export class EnvironmentSystem {
 
   private collapseBuilding(id: number, bld: any): void {
     const world = this.game.world;
+    this.game.updateMineVeinStateFromBuilding(id);
 
     // Remove workers
     if (bld.assignedWorkers) {
@@ -139,6 +108,7 @@ export class EnvironmentSystem {
         if (worker) {
           worker.workplaceId = null;
           worker.profession = Profession.LABORER;
+          worker.task = null;
         }
       }
     }
@@ -160,6 +130,7 @@ export class EnvironmentSystem {
           this.game.tileMap.set(pos.tileX + dx, pos.tileY + dy, {
             occupied: false,
             buildingId: null,
+            blocksMovement: false,
           });
         }
       }
@@ -167,6 +138,54 @@ export class EnvironmentSystem {
 
     world.destroyEntity(id);
     this.game.eventBus.emit('building_collapsed', { name: bld.name, tileX: pos?.tileX, tileY: pos?.tileY });
+  }
+
+  private applyLifecycle(tile: any, field: string, lc: ResourceLifecycle, maxVal: number, ssFloat: number, x: number, y: number): void {
+    if (!this.tileEligible(tile, field, x, y)) return;
+    const offset = this.tilePhaseOffset(x, y, lc.phaseVariance);
+    const ss = ((ssFloat + offset) % 12 + 12) % 12;
+    const target = this.computeTarget(lc, ss, maxVal);
+    if (tile[field] < target && Math.random() < lc.growthProb) tile[field]++;
+    else if (tile[field] > target && Math.random() < lc.decayProb) tile[field]--;
+  }
+
+  private computeTarget(lc: ResourceLifecycle, ss: number, maxVal: number): number {
+    const min = Math.floor(lc.minFraction * maxVal);
+    if (ss < lc.bloomStart || ss >= lc.dormantStart) return min;
+    if (ss >= lc.peakStart && ss < lc.declineStart) return maxVal;
+    if (ss < lc.peakStart) {
+      const t = (ss - lc.bloomStart) / (lc.peakStart - lc.bloomStart);
+      return Math.round(min + t * (maxVal - min));
+    }
+    const t = (ss - lc.declineStart) / (lc.dormantStart - lc.declineStart);
+    return Math.round(maxVal - t * (maxVal - min));
+  }
+
+  private tilePhaseOffset(x: number, y: number, variance: number): number {
+    const h = Math.imul(x * 374761393, y * 1013904223 + 1) >>> 0;
+    return ((h % 1000) / 1000 - 0.5) * variance * 2;
+  }
+
+  /** Deterministic hash: limits which tiles can sustain each resource type,
+   *  matching original scatter percentages so visual density stays consistent. */
+  private tileEligible(tile: any, field: string, x: number, y: number): boolean {
+    const h = (salt: number) => ((Math.imul(x * 374761393 + salt, y * 1013904223 + 1) >>> 0) % 100);
+    switch (field) {
+      case 'berries':
+        if (tile.type === TileType.FOREST)  return h(0) < 40; // matches BERRY_FOREST_CHANCE 40%
+        if (tile.type === TileType.FERTILE) return h(1) < 20; // matches BERRY_FERTILE_CHANCE 20%
+        return false;
+      case 'mushrooms':
+        return tile.type === TileType.FOREST && h(2) < 30;    // matches MUSHROOM_FOREST_CHANCE 30%
+      case 'herbs':
+        if (tile.type !== TileType.FOREST && tile.type !== TileType.GRASS && tile.type !== TileType.FERTILE) return false;
+        return h(3) < 15;                                      // matches HERB_CHANCE 15%
+      case 'wildlife':
+        if (tile.type === TileType.FOREST) return h(4) < 25;  // matches WILDLIFE_FOREST_CHANCE 25%
+        if (tile.type === TileType.GRASS)  return h(4) < 10;  // matches WILDLIFE_GRASS_CHANCE 10%
+        return false;
+      default: return true; // fish: all water tiles (already filtered by caller)
+    }
   }
 
   getInternalState(): { scanIndex: number; buildingDecayCounter: number } {

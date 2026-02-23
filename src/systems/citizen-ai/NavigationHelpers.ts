@@ -3,9 +3,10 @@ import { EntityId, DoorDef } from '../../types';
 import { getDoorEntryTile } from '../../utils/DoorUtils';
 import { BUILDING_DEFS } from '../../data/BuildingDefs';
 import {
-  BuildingType,
+  BuildingType, TILE_SIZE,
   WANDER_ATTEMPTS, WANDER_RANGE,
   FORCE_WANDER_ATTEMPTS, FORCE_WANDER_RANGE, FORCE_WANDER_MIN_DIST,
+  ROAD_CONSTRUCTION_SITE_DISTANCE_PENALTY,
 } from '../../constants';
 import { distance } from '../../utils/MathUtils';
 
@@ -73,8 +74,7 @@ export class NavigationHelpers {
 
   /**
    * Try to place a citizen inside a building. Returns true if accepted.
-   * Enforces capacity limits — residents and assigned workers are always
-   * admitted to their own home/workplace; visitors are turned away when full.
+   * Enforces capacity limits with resident priority in houses.
    */
   enterBuilding(citizenId: EntityId, buildingId: EntityId): boolean {
     const citizen = this.game.world.getComponent<any>(citizenId, 'citizen');
@@ -99,15 +99,16 @@ export class NavigationHelpers {
 
     // Check if citizen has a right to enter (resident or assigned worker)
     const family = this.game.world.getComponent<any>(citizenId, 'family');
-    const worker = this.game.world.getComponent<any>(citizenId, 'worker');
     const isResident = family?.homeId === buildingId;
-    const isWorker = worker?.workplaceId === buildingId;
+    const currentOccupants = this.getBuildingOccupantCount(buildingId);
 
-    // Residents and workers are always admitted
-    if (!isResident && !isWorker) {
-      // Visitor — check if there's room
-      const currentOccupants = this.getBuildingOccupantCount(buildingId);
-      if (currentOccupants >= capacity) return false;
+    // Hard occupant cap for everyone.
+    if (currentOccupants >= capacity) return false;
+
+    // In houses, non-residents can only use truly free beds.
+    if (house && !isResident) {
+      const residentCount = house.residents?.length || 0;
+      if (residentCount >= capacity) return false;
     }
 
     // Exit previous building if entering a different one
@@ -175,6 +176,8 @@ export class NavigationHelpers {
       if (bld.type !== BuildingType.WOODEN_HOUSE || !bld.completed) continue;
       const house = this.game.world.getComponent<any>(id, 'house');
       const maxOccupants = house?.maxResidents || bld.residents || 5;
+      const residentCount = house?.residents?.length || 0;
+      if (residentCount >= maxOccupants) continue;
       if (this.getBuildingOccupantCount(id) >= maxOccupants) continue;
 
       const bPos = this.game.world.getComponent<any>(id, 'position');
@@ -218,7 +221,9 @@ export class NavigationHelpers {
     if (!buildings) return null;
 
     let nearest: EntityId | null = null;
-    let nearestDist = Infinity;
+    let bestScore = Infinity;
+    let bestRawDist = Infinity;
+    let bestIsRoadLike = false;
 
     for (const [id, bld] of buildings) {
       if (bld.completed || bld.constructionProgress >= 1) continue;
@@ -226,12 +231,60 @@ export class NavigationHelpers {
       const bPos = this.game.world.getComponent<any>(id, 'position');
       if (!bPos) continue;
       const d = distance(pos.tileX, pos.tileY, bPos.tileX, bPos.tileY);
-      if (d < nearestDist) {
-        nearestDist = d;
+      const isRoadLike = this.isRoadLikeConstructionType(bld.type);
+      const score = isRoadLike ? d * ROAD_CONSTRUCTION_SITE_DISTANCE_PENALTY : d;
+
+      const isBetterScore = score < bestScore;
+      const isTieButPreferBuilding = score === bestScore && bestIsRoadLike && !isRoadLike;
+      const isTieSameTypeButCloser = score === bestScore && isRoadLike === bestIsRoadLike && d < bestRawDist;
+
+      if (isBetterScore || isTieButPreferBuilding || isTieSameTypeButCloser) {
+        bestScore = score;
+        bestRawDist = d;
+        bestIsRoadLike = isRoadLike;
         nearest = id;
       }
     }
     return nearest;
+  }
+
+  private isRoadLikeConstructionType(type: string): boolean {
+    return type === BuildingType.ROAD ||
+      type === BuildingType.STONE_ROAD ||
+      type === BuildingType.BRIDGE;
+  }
+
+  /**
+   * If the citizen is on a non-walkable tile (e.g. walked into a building that was
+   * placed while they were moving), snap them to the nearest walkable tile.
+   * Returns true if a snap occurred so the caller can skip further AI this tick.
+   */
+  snapToWalkable(id: EntityId): boolean {
+    const pos = this.game.world.getComponent<any>(id, 'position');
+    if (!pos || this.game.tileMap.isWalkable(pos.tileX, pos.tileY)) return false;
+
+    for (let r = 1; r <= 10; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const nx = pos.tileX + dx;
+          const ny = pos.tileY + dy;
+          if (this.game.tileMap.isWalkable(nx, ny)) {
+            pos.tileX = nx;
+            pos.tileY = ny;
+            pos.pixelX = nx * TILE_SIZE + TILE_SIZE / 2;
+            pos.pixelY = ny * TILE_SIZE + TILE_SIZE / 2;
+            const movement = this.game.world.getComponent<any>(id, 'movement');
+            if (movement) {
+              movement.path = [];
+              movement.stuckTicks = 0;
+            }
+            return true;
+          }
+        }
+      }
+    }
+    return false;
   }
 
   wander(id: EntityId): void {

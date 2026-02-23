@@ -1,4 +1,5 @@
 import { BuildingType, ResourceType } from '../constants';
+// Note: GATHERING_LODGE, HUNTING_LODGE, SAWMILL, IRON_WORKS are tier-2 upgrades with their own recipes
 import { RecipeDef } from '../types';
 
 // cooldownTicks = time for one production cycle at full efficiency
@@ -34,7 +35,7 @@ export const RECIPE_DEFS: RecipeDef[] = [
   {
     buildingType: BuildingType.WOOD_CUTTER,
     inputs: { [ResourceType.LOG]: 1 },
-    outputs: { [ResourceType.FIREWOOD]: 3 },
+    outputs: { [ResourceType.FIREWOOD]: 6 },
     cooldownTicks: 100,  // ~1.3h per batch (was 80)
   },
   // Blacksmith: forge tools from iron and logs
@@ -110,5 +111,40 @@ export const RECIPE_DEFS: RecipeDef[] = [
     inputs: { [ResourceType.WOOL]: 3 },
     outputs: { [ResourceType.CLOTH]: 2 },
     cooldownTicks: 250,  // ~3.3h per bolt
+  },
+
+  // ── Tier-2 upgraded building recipes ───────────────────────────────
+
+  // Gathering Lodge: same as Gathering Hut but with wider radius
+  {
+    buildingType: BuildingType.GATHERING_LODGE,
+    inputs: {},
+    outputs: { [ResourceType.BERRIES]: 5, [ResourceType.MUSHROOMS]: 3, [ResourceType.ROOTS]: 3 },
+    cooldownTicks: 120,
+    seasonalMultiplier: true,
+    gatherFromRadius: true,
+  },
+  // Hunting Lodge: same as Hunting Cabin but with wider radius
+  {
+    buildingType: BuildingType.HUNTING_LODGE,
+    inputs: {},
+    outputs: { [ResourceType.VENISON]: 8, [ResourceType.LEATHER]: 3 },
+    cooldownTicks: 180,
+    seasonalMultiplier: true,
+    gatherFromRadius: true,
+  },
+  // Sawmill: 2 workers, improved 9 firewood per log
+  {
+    buildingType: BuildingType.SAWMILL,
+    inputs: { [ResourceType.LOG]: 1 },
+    outputs: { [ResourceType.FIREWOOD]: 9 },
+    cooldownTicks: 80,
+  },
+  // Iron Works: 2 workers, faster cooldown than Blacksmith's 350
+  {
+    buildingType: BuildingType.IRON_WORKS,
+    inputs: { [ResourceType.IRON]: 1, [ResourceType.LOG]: 1 },
+    outputs: { [ResourceType.TOOL]: 1 },
+    cooldownTicks: 250,
   },
 ];

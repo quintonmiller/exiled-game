@@ -22,6 +22,14 @@ export class MovementSystem {
 
       mov.moving = true;
       const target = mov.path[0];
+
+      // Abort path if the next node became non-walkable (e.g. building placed mid-path)
+      if (!this.tileMap.isWalkable(target.x, target.y)) {
+        mov.path = [];
+        mov.moving = false;
+        continue;
+      }
+
       const targetPX = target.x * TILE_SIZE + TILE_SIZE / 2;
       const targetPY = target.y * TILE_SIZE + TILE_SIZE / 2;
 

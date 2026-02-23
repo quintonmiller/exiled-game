@@ -36,7 +36,7 @@ export class BuildMenu {
     }
 
     // Building buttons below
-    const buildings = Object.values(BUILDING_DEFS).filter(b => b.category === this.selectedCategory);
+    const buildings = Object.values(BUILDING_DEFS).filter(b => b.category === this.selectedCategory && (!b.upgradeFrom || b.constructionWork > 0));
     const buttonY = TAB_HEIGHT + 8;
     const row = Math.floor((y - buttonY) / (BUTTON_HEIGHT + PADDING));
     const col = Math.floor((x - PADDING) / (BUTTON_WIDTH + PADDING));
@@ -84,7 +84,7 @@ export class BuildMenu {
     }
 
     // Building buttons
-    const buildings = Object.values(BUILDING_DEFS).filter(b => b.category === this.selectedCategory);
+    const buildings = Object.values(BUILDING_DEFS).filter(b => b.category === this.selectedCategory && (!b.upgradeFrom || b.constructionWork > 0));
     const startY = menuY + TAB_HEIGHT + 8;
 
     for (let i = 0; i < buildings.length; i++) {

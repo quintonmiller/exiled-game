@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Citizens — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">
+      <h1>Citizens</h1>
+      <p>Your citizens are the heart of the settlement. They have needs, personalities, skills, and families. Keeping them alive and happy is your primary challenge.</p>
+    </div>
+
+    <!-- Needs -->
+    <div class="panel" id="needs">
+      <h2>Citizen Needs</h2>
+      <p>Every citizen has five needs, each measured on a scale of 0 to 100. When needs drop too low, citizens suffer — and can die.</p>
+      <div id="needs-list"></div>
+    </div>
+
+    <!-- Daily Life -->
+    <div class="panel" id="daily-life">
+      <h2>Daily Life</h2>
+      <p>Citizens follow a priority-based daily routine. They automatically decide what to do based on their most urgent need:</p>
+      <ol>
+        <li><strong>Sleeping</strong> — If already asleep, stay asleep until rested or until dawn (unless starving).</li>
+        <li><strong>Starving</strong> — If food need is critically low, drop everything and find food.</li>
+        <li><strong>Freezing</strong> — If warmth is dangerously low, rush home for shelter.</li>
+        <li><strong>Exhausted</strong> — If energy is too low, go home and sleep.</li>
+        <li><strong>Nighttime</strong> — Go home and sleep when it gets dark.</li>
+        <li><strong>Hungry</strong> — If food need is moderately low, eat a meal.</li>
+        <li><strong>Festival</strong> — If a festival is active, go celebrate at the <a href="building.html?id=town_hall">Town Hall</a>.</li>
+        <li><strong>Work</strong> — If assigned to a workplace, go work (earns skill XP).</li>
+        <li><strong>Construction</strong> — If unassigned (laborer), help build incomplete structures.</li>
+        <li><strong>Evening social</strong> — Visit the <a href="building.html?id=tavern">Tavern</a> if it's evening.</li>
+        <li><strong>Socialize</strong> — Chat with a nearby citizen for a happiness boost.</li>
+        <li><strong>Wander</strong> — Walk around aimlessly (adventurous citizens gain happiness).</li>
+      </ol>
+    </div>
+
+    <!-- Professions -->
+    <div class="panel" id="professions">
+      <h2>Professions</h2>
+      <p>Citizens can be assigned to buildings as workers. Each building type has an associated profession. Unassigned adults work as <strong>Laborers</strong>, helping with construction.</p>
+
+      <div id="profession-list" class="grid-3" style="margin-top:0.7rem"></div>
+
+      <div class="note" style="margin-top:0.8rem">
+        <strong>Tool requirement:</strong> Some professions require tools. Workers without tools suffer a <strong>50% production penalty</strong>. Keep your <a href="building.html?id=blacksmith">Blacksmith</a> running.
+      </div>
+    </div>
+
+    <!-- Skills -->
+    <div class="panel" id="skills">
+      <h2>Skills</h2>
+      <p>Citizens gain experience in their profession by working. Skills have 5 levels, each providing a small efficiency bonus:</p>
+
+      <dl class="key-value">
+        <dt>XP per work cycle</dt><dd>Small amount gained per production cycle</dd>
+        <dt>Levels</dt><dd>1 through 5 (500 XP per level)</dd>
+        <dt>Bonus per level</dt><dd>+5% production efficiency</dd>
+        <dt>Mastery (Level 5)</dt><dd>10% chance of bonus output per cycle</dd>
+      </dl>
+
+      <details style="margin-top:0.6rem">
+        <summary>Skill types and associated buildings</summary>
+        <div class="detail-body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Skill</th><th>Earned at</th></tr></thead>
+              <tbody id="skills-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Personality Traits -->
+    <div class="panel" id="traits">
+      <h2>Personality Traits</h2>
+      <p>Each citizen can have up to 2 personality traits that affect their behavior and productivity:</p>
+      <div id="traits-list" style="margin-top:0.5rem"></div>
+    </div>
+
+    <!-- Families & Population -->
+    <div class="panel" id="families">
+      <h2>Families &amp; Population</h2>
+
+      <h3>Life Stages</h3>
+      <ul>
+        <li><strong>Children (age 0–17):</strong> Cannot work. Children who reach adulthood while a staffed <a href="building.html?id=school">School</a> exists become educated.</li>
+        <li><strong>Adults (age 18–59):</strong> Can be assigned to jobs and form relationships.</li>
+        <li><strong>Elderly (age 60+):</strong> Still work, but face increasing risk of death from old age.</li>
+      </ul>
+
+      <h3>Relationships &amp; Marriage</h3>
+      <ul>
+        <li>Single adults naturally pair up over time.</li>
+        <li>Couples may marry — if a <a href="building.html?id=chapel">Chapel</a> exists, both gain +10 happiness.</li>
+        <li>Marriage changes the woman's surname to her partner's.</li>
+      </ul>
+
+      <h3>Pregnancy &amp; Birth</h3>
+      <ul>
+        <li>Partnered women (age 18–45) may become pregnant.</li>
+        <li>Pregnancy lasts about 9 in-game months (roughly 45 days).</li>
+        <li>During pregnancy, food and energy needs increase, and movement slows in later stages.</li>
+        <li>Each couple can have up to 3 children.</li>
+      </ul>
+
+      <h3>Immigration</h3>
+      <ul>
+        <li>Travelers pass through your settlement via roads.</li>
+        <li>Some may choose to settle based on your housing, food supply, and job availability.</li>
+        <li>Nomad groups also arrive periodically — but beware, they carry a small risk of disease.</li>
+      </ul>
+    </div>
+
+    <!-- Education -->
+    <div class="panel" id="education">
+      <h2>Education</h2>
+      <p>Education is a permanent bonus that makes citizens more productive for life:</p>
+      <ul>
+        <li>Build a <a href="building.html?id=school">School</a> and assign a teacher.</li>
+        <li>Children who come of age while a staffed school exists become <strong>educated</strong>.</li>
+        <li>Educated workers receive <strong>+50% production and construction speed</strong>.</li>
+        <li>Upgrade to an <a href="building.html?id=academy">Academy</a> for <strong>+75%</strong> instead.</li>
+        <li>Education is permanent — once educated, always educated.</li>
+      </ul>
+      <div class="note tip">
+        Schools are expensive but pay off enormously over a citizen's lifetime. Build one as soon as you can sustain the teacher's upkeep.
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    // Render needs
+    const needsList = document.getElementById('needs-list');
+    ManualData.needs.forEach(n => {
+      const div = document.createElement('div');
+      div.style.cssText = 'margin-bottom:0.9rem;';
+      div.innerHTML = `
+        <div class="need-bar-wrap">
+          <span class="need-bar-label" style="color:${n.color}">${n.name}</span>
+          <div class="need-bar"><div class="need-bar-fill" style="width:75%;background:${n.color}"></div></div>
+        </div>
+        <p style="font-size:0.87rem;margin:0.2rem 0 0.15rem">${n.description}</p>
+        <p style="font-size:0.83rem;color:var(--red);margin:0 0 0.15rem"><strong>Danger:</strong> ${n.danger}</p>
+        <ul style="font-size:0.83rem;margin:0">
+          ${n.tips.map(t => `<li>${t}</li>`).join('')}
+        </ul>
+      `;
+      needsList.appendChild(div);
+    });
+
+    // Render professions
+    const profList = document.getElementById('profession-list');
+    ManualData.professions.forEach(p => {
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.style.padding = '0.65rem 0.85rem';
+      div.innerHTML = `
+        <h3 style="font-size:0.85rem;margin-bottom:0.15rem">${p.name}</h3>
+        <p style="font-size:0.8rem;margin:0">${p.description}</p>
+        ${p.toolRequired ? '<p style="font-size:0.75rem;color:var(--amber);margin:0.15rem 0 0">Requires tool</p>' : ''}
+      `;
+      profList.appendChild(div);
+    });
+
+    // Render skills table
+    const skillsTable = document.getElementById('skills-table');
+    ManualData.skills.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><strong>${s.name}</strong></td><td>${s.buildings.join(', ')}</td>`;
+      skillsTable.appendChild(tr);
+    });
+
+    // Render traits
+    const traitsList = document.getElementById('traits-list');
+    ManualData.traits.forEach(t => {
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;align-items:baseline;gap:0.5rem;margin-bottom:0.35rem;';
+      div.innerHTML = `
+        <span class="chip" style="color:${t.color};border-color:${t.color}">${t.name}</span>
+        <span style="font-size:0.87rem;color:var(--ink-2)">${t.effect}</span>
+      `;
+      traitsList.appendChild(div);
+    });
+  </script>
+</body>
+</html>

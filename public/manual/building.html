@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building — Exiled Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <p>Loading...</p>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    const bld = ManualData.buildingById(id);
+    const content = document.getElementById('content');
+
+    if (!bld) {
+      content.innerHTML = `
+        <div class="page-title">
+          <h1>Building Not Found</h1>
+          <p>No building with ID "${id}" exists.</p>
+        </div>
+        <p><a href="buildings.html">Back to all buildings</a></p>
+      `;
+    } else {
+      document.title = `${bld.name} — Exiled Manual`;
+      renderBuilding(bld);
+    }
+
+    function renderBuilding(b) {
+      const catColor = ManualData.categoryColors[b.category] || '#888';
+      const recipes = ManualData.recipesForBuilding(b.id);
+      const baseBuilding = b.upgradeFrom ? ManualData.buildingById(b.upgradeFrom) : null;
+      const upgradeTarget = b.upgradesTo ? ManualData.buildingById(b.upgradesTo) : null;
+
+      let html = '';
+
+      // Breadcrumb
+      html += `
+        <div class="breadcrumb">
+          <a href="buildings.html">Buildings</a>
+          <span class="sep">/</span>
+          <a href="buildings.html?cat=${b.category}">${b.category}</a>
+          <span class="sep">/</span>
+          ${b.name}
+        </div>
+      `;
+
+      // Title
+      html += `<div class="page-title">
+        <div class="chip-row" style="margin-bottom:0.4rem">
+          <span class="chip chip-category" style="color:${catColor};border-color:${catColor}">${b.category}</span>
+          ${b.isTier2 ? '<span class="chip chip-tier2">Tier 2 Upgrade</span>' : ''}
+          ${b.profession ? `<span class="chip">${b.profession}</span>` : ''}
+        </div>
+        <h1>${b.name}</h1>
+        <p>${b.description}</p>
+      </div>`;
+
+      // Stats row
+      html += '<div class="stat-row">';
+
+      const sizeStr = b.flexible
+        ? `${b.minSize[0]}\u2013${b.maxSize[0]} (drag)`
+        : `${b.size[0]}\u00d7${b.size[1]}`;
+      html += `<div class="stat"><div class="stat-label">Footprint</div><div class="stat-value">${sizeStr}</div></div>`;
+
+      if (b.workers > 0) {
+        html += `<div class="stat"><div class="stat-label">Workers</div><div class="stat-value">${b.workers}</div></div>`;
+      }
+      if (b.radius > 0) {
+        html += `<div class="stat"><div class="stat-label">Work Radius</div><div class="stat-value">${b.radius} tiles</div></div>`;
+      }
+      if (b.residents) {
+        html += `<div class="stat"><div class="stat-label">Residents</div><div class="stat-value">${b.residents}</div></div>`;
+      }
+      if (b.storageCapacity) {
+        html += `<div class="stat"><div class="stat-label">Capacity</div><div class="stat-value">${b.storageCapacity.toLocaleString()}</div></div>`;
+      }
+      html += '</div>';
+
+      // Construction cost (only for base buildings)
+      if (!b.isTier2) {
+        html += '<div class="panel">';
+        html += '<h2>Construction</h2>';
+
+        const cost = ManualData.formatCost(b.cost || {});
+        html += `<dl class="key-value">`;
+        html += `<dt>Cost</dt><dd>${cost}</dd>`;
+        html += `<dt>Build time (1 builder)</dt><dd>${ManualData.buildTime(b.constructionWork, 1)}</dd>`;
+        html += `<dt>Build time (3 builders)</dt><dd>${ManualData.buildTime(b.constructionWork, 3)}</dd>`;
+        html += `<dt>Build time (5 builders)</dt><dd>${ManualData.buildTime(b.constructionWork, 5)}</dd>`;
+        html += `</dl>`;
+
+        if (b.requirements && b.requirements.length) {
+          html += '<div class="note">';
+          b.requirements.forEach(r => { html += `<p style="margin:0">${r}</p>`; });
+          html += '</div>';
+        }
+
+        html += '</div>';
+      }
+
+      // Upgrade from (for tier 2)
+      if (b.isTier2 && baseBuilding) {
+        html += '<div class="panel">';
+        html += '<h2>Upgrade Information</h2>';
+        html += `<p>This is an upgraded version of the <a href="building.html?id=${baseBuilding.id}">${baseBuilding.name}</a>. It cannot be built from scratch — you must upgrade an existing ${baseBuilding.name}.</p>`;
+
+        if (baseBuilding.upgradeCost) {
+          html += `<dl class="key-value">`;
+          html += `<dt>Upgrade cost</dt><dd>${ManualData.formatCost(baseBuilding.upgradeCost)}</dd>`;
+          html += `<dt>Upgrade time (1 builder)</dt><dd>${ManualData.buildTime(baseBuilding.upgradeWork, 1)}</dd>`;
+          html += `<dt>Upgrade time (3 builders)</dt><dd>${ManualData.buildTime(baseBuilding.upgradeWork, 3)}</dd>`;
+          html += `</dl>`;
+        }
+
+        if (b.improvements && b.improvements.length) {
+          html += '<h3 style="margin-top:0.8rem">Improvements</h3>';
+          html += '<ul class="improvements">';
+          b.improvements.forEach(imp => { html += `<li>${imp}</li>`; });
+          html += '</ul>';
+        }
+        html += '</div>';
+      }
+
+      // Upgrade to (for base buildings)
+      if (upgradeTarget && b.upgradeCost) {
+        html += '<div class="panel">';
+        html += '<h2>Upgrade Path</h2>';
+        html += `<div class="upgrade-arrow">
+          ${b.name} <span class="arrow">\u2192</span>
+          <a href="building.html?id=${upgradeTarget.id}">${upgradeTarget.name}</a>
+        </div>`;
+
+        html += `<dl class="key-value">`;
+        html += `<dt>Upgrade cost</dt><dd>${ManualData.formatCost(b.upgradeCost)}</dd>`;
+        html += `<dt>Upgrade time (3 builders)</dt><dd>${ManualData.buildTime(b.upgradeWork, 3)}</dd>`;
+        html += `</dl>`;
+
+        if (upgradeTarget.improvements && upgradeTarget.improvements.length) {
+          html += '<h3 style="margin-top:0.8rem">Improvements</h3>';
+          html += '<ul class="improvements">';
+          upgradeTarget.improvements.forEach(imp => { html += `<li>${imp}</li>`; });
+          html += '</ul>';
+        }
+        html += '</div>';
+      }
+
+      // Recipes
+      if (recipes.length > 0) {
+        html += '<div class="panel">';
+        html += `<h2>Production${recipes.length > 1 ? ` (${recipes.length} recipes)` : ''}</h2>`;
+
+        recipes.forEach(r => {
+          const inputs = ManualData.formatInputs(r.inputs);
+          const outputs = ManualData.formatOutputs(r.outputs);
+          const time = ManualData.ticksToTime(r.cycleTicks);
+
+          html += '<div class="recipe">';
+          html += '<div class="recipe-flow">';
+          html += `<span class="recipe-item">${inputs}</span>`;
+          html += `<span class="recipe-arrow">\u2192</span>`;
+          html += `<span class="recipe-item">${outputs}</span>`;
+          html += `<span class="recipe-time">${time} per cycle</span>`;
+          html += '</div>';
+          if (r.seasonal) {
+            html += '<div class="recipe-note">Output varies by season</div>';
+          }
+          html += '</div>';
+        });
+
+        html += '</div>';
+      }
+
+      // Details
+      if (b.details && b.details.length) {
+        html += '<div class="panel">';
+        html += '<h2>Details</h2>';
+        html += '<ul>';
+        b.details.forEach(d => { html += `<li>${d}</li>`; });
+        html += '</ul>';
+        html += '</div>';
+      }
+
+      // Related buildings in same category
+      const related = ManualData.buildings.filter(
+        other => other.category === b.category && other.id !== b.id && other.id !== b.upgradeFrom && other.id !== b.upgradesTo
+      );
+      if (related.length > 0) {
+        html += '<div class="panel">';
+        html += `<h2>Other ${b.category} Buildings</h2>`;
+        html += '<div class="link-grid">';
+        related.forEach(r => {
+          const subtitle = r.workers > 0 ? r.workers + ' workers' : r.residents ? r.residents + ' residents' : r.storageCapacity ? r.storageCapacity.toLocaleString() + ' cap' : '';
+          html += `<a href="building.html?id=${r.id}" class="link-card">${r.name}${r.isTier2 ? ' <span class="chip chip-tier2" style="font-size:0.65rem;padding:0.1rem 0.4rem">T2</span>' : ''}<small>${subtitle}</small></a>`;
+        });
+        html += '</div>';
+        html += '</div>';
+      }
+
+      content.innerHTML = html;
+    }
+  </script>
+</body>
+</html>

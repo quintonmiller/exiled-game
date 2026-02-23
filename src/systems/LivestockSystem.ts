@@ -95,7 +95,7 @@ export class LivestockSystem {
       data.health = 30; // surviving animals are weakened
       if (animalType === 'cattle') {
         // Dead cattle produce some leather
-        this.game.addResource(ResourceType.LEATHER, died * 2);
+        this.game.addResourceRespectingLimit(ResourceType.LEATHER, died * 2);
       }
       return;
     }
@@ -108,31 +108,39 @@ export class LivestockSystem {
     if (animalType === 'chicken') {
       data.eggTimer += data.animalCount;
       if (data.eggTimer >= CHICKEN_EGG_TICKS) {
-        if (storageFull) { data.eggTimer = CHICKEN_EGG_TICKS; } else {
+        if (storageFull || this.game.isResourceLimitMet(ResourceType.EGGS)) {
+          data.eggTimer = CHICKEN_EGG_TICKS;
+        } else {
           data.eggTimer = 0;
-          this.game.addResource(ResourceType.EGGS, Math.ceil(data.animalCount * 0.7));
+          this.game.addResourceRespectingLimit(ResourceType.EGGS, Math.ceil(data.animalCount * 0.7));
         }
       }
       data.featherTimer += data.animalCount;
       if (data.featherTimer >= CHICKEN_FEATHER_TICKS) {
-        if (storageFull) { data.featherTimer = CHICKEN_FEATHER_TICKS; } else {
+        if (storageFull || this.game.isResourceLimitMet(ResourceType.FEATHERS)) {
+          data.featherTimer = CHICKEN_FEATHER_TICKS;
+        } else {
           data.featherTimer = 0;
-          this.game.addResource(ResourceType.FEATHERS, Math.ceil(data.animalCount * 0.3));
+          this.game.addResourceRespectingLimit(ResourceType.FEATHERS, Math.ceil(data.animalCount * 0.3));
         }
       }
     } else {
       data.milkTimer += data.animalCount;
       if (data.milkTimer >= CATTLE_MILK_TICKS) {
-        if (storageFull) { data.milkTimer = CATTLE_MILK_TICKS; } else {
+        if (storageFull || this.game.isResourceLimitMet(ResourceType.MILK)) {
+          data.milkTimer = CATTLE_MILK_TICKS;
+        } else {
           data.milkTimer = 0;
-          this.game.addResource(ResourceType.MILK, data.animalCount);
+          this.game.addResourceRespectingLimit(ResourceType.MILK, data.animalCount);
         }
       }
       data.woolTimer += data.animalCount;
       if (data.woolTimer >= CATTLE_WOOL_TICKS) {
-        if (storageFull) { data.woolTimer = CATTLE_WOOL_TICKS; } else {
+        if (storageFull || this.game.isResourceLimitMet(ResourceType.WOOL)) {
+          data.woolTimer = CATTLE_WOOL_TICKS;
+        } else {
           data.woolTimer = 0;
-          this.game.addResource(ResourceType.WOOL, Math.ceil(data.animalCount * 0.5));
+          this.game.addResourceRespectingLimit(ResourceType.WOOL, Math.ceil(data.animalCount * 0.5));
         }
       }
     }

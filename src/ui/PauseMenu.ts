@@ -16,6 +16,7 @@ export class PauseMenu {
   onSave: (() => void) | null = null;
   onLoad: (() => void) | null = null;
   onSettings: (() => void) | null = null;
+  onManual: (() => void) | null = null;
   onMainMenu: (() => void) | null = null;
 
   show(): void {
@@ -48,7 +49,7 @@ export class PauseMenu {
 
     // Panel
     const panelW = 300;
-    const panelH = 376;
+    const panelH = 432;
     const panelX = (w - panelW) / 2;
     const panelY = (h - panelH) / 2;
 
@@ -73,8 +74,8 @@ export class PauseMenu {
     let btnY = panelY + 80;
     const gap = 12;
 
-    const actions = ['resume', 'save', 'load', 'settings', 'mainmenu'];
-    const labels = ['Resume', 'Save Game', 'Load Game', 'Settings', 'Main Menu'];
+    const actions = ['resume', 'save', 'load', 'settings', 'manual', 'mainmenu'];
+    const labels = ['Resume', 'Save Game', 'Load Game', 'Settings', 'Gameplay Manual', 'Main Menu'];
 
     this.buttons = [];
     for (let i = 0; i < labels.length; i++) {
@@ -148,6 +149,7 @@ export class PauseMenu {
           case 'save': this.onSave?.(); break;
           case 'load': this.onLoad?.(); break;
           case 'settings': this.onSettings?.(); break;
+          case 'manual': this.onManual?.(); break;
           case 'mainmenu': this.onMainMenu?.(); break;
         }
         return true;

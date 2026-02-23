@@ -45,7 +45,8 @@ export class EventLog {
     });
 
     bus.on('citizen_died', (data: any) => {
-      this.addEntry('population', `${data.name} has died`, '#ff4444', data.id);
+      const cause = data.cause || 'unknown causes';
+      this.addEntry('population', `${data.name} has died from ${cause}`, '#ff4444', data.id);
     });
 
     bus.on('citizen_pregnant', (data: any) => {
@@ -57,7 +58,25 @@ export class EventLog {
     });
 
     bus.on('nomads_arrived', (data: any) => {
-      this.addEntry('population', `${data.count} nomads have arrived`, '#44dd44');
+      const viaLabel = data.via === 'river'
+        ? ' by river'
+        : data.via === 'road'
+          ? ' by road'
+          : data.via === 'outreach'
+            ? ' from outreach'
+            : '';
+      this.addEntry('population', `${data.count} newcomers have arrived${viaLabel}`, '#44dd44');
+    });
+
+    bus.on('road_travelers_passed', (data: any) => {
+      const count = Math.max(1, data.count || 1);
+      const typeLabel = data.travelType === 'work_seekers'
+        ? (count === 1 ? 'work seeker' : 'work seekers')
+        : data.travelType === 'settler_family'
+          ? (count === 1 ? 'settler family' : 'settler families')
+          : (count === 1 ? 'traveler' : 'travelers');
+      const connectionLabel = data.connected ? '' : ' (not connected to village)';
+      this.addEntry('travel', `${count} ${typeLabel} passed along the trade road${connectionLabel}`, '#9fb0bf');
     });
 
     bus.on('citizen_sick', (data: any) => {
@@ -80,6 +99,16 @@ export class EventLog {
     bus.on('building_collapsed', (data: any) => {
       this.addEntry('building', `${data.name} has collapsed!`, '#ff6644',
         undefined, data.tileX, data.tileY);
+    });
+
+    bus.on('building_demolition_started', (data: any) => {
+      this.addEntry('building', `${data.name} marked for demolition`, '#dd8866',
+        data.id, data.tileX, data.tileY);
+    });
+
+    bus.on('building_demolished', (data: any) => {
+      this.addEntry('building', `${data.name} demolished`, '#cc7766',
+        data.id, data.tileX, data.tileY);
     });
 
     bus.on('merchant_arrived', () => {
@@ -113,11 +142,13 @@ export class EventLog {
     });
 
     bus.on('wedding', (data: any) => {
-      const male = this.game.world.getComponent<any>(data.maleId, 'citizen');
-      const female = this.game.world.getComponent<any>(data.femaleId, 'citizen');
-      const mName = male?.name || 'Unknown';
-      const fName = female?.name || 'Unknown';
-      this.addEntry('social', `${mName} and ${fName} got married!`, '#ff88cc');
+      const firstId = data.partnerAId ?? data.maleId;
+      const secondId = data.partnerBId ?? data.femaleId;
+      const first = this.game.world.getComponent<any>(firstId, 'citizen');
+      const second = this.game.world.getComponent<any>(secondId, 'citizen');
+      const firstName = first?.name || 'Unknown';
+      const secondName = second?.name || 'Unknown';
+      this.addEntry('social', `${firstName} and ${secondName} got married!`, '#ff88cc');
     });
 
     bus.on('festival_started', (data: any) => {

@@ -24,6 +24,7 @@ export class StartScreen {
 
   onNewGame: ((seed: number) => void) | null = null;
   onLoadGame: (() => void) | null = null;
+  onManual: (() => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement, saveManager: SaveManager) {
     this.canvas = canvas;
@@ -216,6 +217,13 @@ export class StartScreen {
         enabled: meta.exists,
         subText,
       });
+      btnY += (meta.exists ? btnH + 20 : btnH) + 12;
+
+      this.buttons.push({
+        label: 'Gameplay Manual',
+        x: btnX, y: btnY, w: btnW, h: btnH,
+        enabled: true,
+      });
     }
 
     // Draw buttons
@@ -301,6 +309,7 @@ export class StartScreen {
           if (i === 0) this.onNewGame?.(Date.now());        // New Game (random)
           if (i === 1) this.showSeedInput();                 // New Game (from seed)
           if (i === 2) this.onLoadGame?.();                  // Load Game
+          if (i === 3) this.onManual?.();                    // Gameplay Manual
         }
         break;
       }

@@ -9,31 +9,48 @@ import {
 /** Building types that use the physical gather-carry-deposit cycle */
 export const GATHER_BUILDING_TYPES = new Set<string>([
   BuildingType.GATHERING_HUT,
+  BuildingType.GATHERING_LODGE,
   BuildingType.HUNTING_CABIN,
+  BuildingType.HUNTING_LODGE,
   BuildingType.FISHING_DOCK,
   BuildingType.HERBALIST,
   BuildingType.FORESTER_LODGE,
+  BuildingType.FORESTRY_HALL,
+]);
+
+/** Building types that use the hybrid surface+underground mine cycle */
+export const MINE_BUILDING_TYPES = new Set<string>([
+  BuildingType.QUARRY,
+  BuildingType.MINE,
 ]);
 
 /** Cache: building type -> readable activity label */
 export const BUILDING_ACTIVITY_LABELS: Record<string, string> = {
   [BuildingType.GATHERING_HUT]: 'foraging',
+  [BuildingType.GATHERING_LODGE]: 'foraging',
   [BuildingType.HUNTING_CABIN]: 'hunting game',
+  [BuildingType.HUNTING_LODGE]: 'hunting game',
   [BuildingType.FISHING_DOCK]: 'fishing',
   [BuildingType.FORESTER_LODGE]: 'felling trees',
+  [BuildingType.FORESTRY_HALL]: 'felling trees',
   [BuildingType.HERBALIST]: 'gathering herbs',
   [BuildingType.WOOD_CUTTER]: 'splitting wood',
+  [BuildingType.SAWMILL]: 'sawing lumber',
   [BuildingType.BLACKSMITH]: 'forging tools',
+  [BuildingType.IRON_WORKS]: 'forging tools',
   [BuildingType.TAILOR]: 'sewing',
   [BuildingType.CROP_FIELD]: 'tending crops',
   [BuildingType.BAKERY]: 'cooking',
   [BuildingType.MARKET]: 'selling goods',
   [BuildingType.SCHOOL]: 'teaching',
+  [BuildingType.ACADEMY]: 'teaching',
   [BuildingType.TRADING_POST]: 'trading',
   [BuildingType.TAVERN]: 'tending bar',
   [BuildingType.CHICKEN_COOP]: 'tending chickens',
   [BuildingType.PASTURE]: 'herding cattle',
   [BuildingType.DAIRY]: 'making cheese',
+  [BuildingType.QUARRY]: 'quarrying stone',
+  [BuildingType.MINE]: 'mining iron',
 };
 
 /** Grant skill XP to a worker based on their current profession */
@@ -95,6 +112,7 @@ export function professionActivity(profession: string): string {
     case Profession.BARKEEP: return 'serving';
     case Profession.HERDER: return 'herding';
     case Profession.DAIRYMAID: return 'dairying';
+    case Profession.MINER: return 'mining';
     default: return 'working';
   }
 }

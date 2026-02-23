@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exiled — Game Manual</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="wrap head">
+      <a href="index.html" class="logo">Exiled</a>
+      <span class="subtitle">Game Manual</span>
+      <nav>
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="buildings.html">Buildings</a>
+        <a href="resources.html">Resources</a>
+        <a href="citizens.html">Citizens</a>
+        <a href="seasons.html">Seasons</a>
+        <a href="mechanics.html">Mechanics</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Exiled</h1>
+      <p class="tagline">A Settlement Survival Game</p>
+      <p>Lead a band of exiled travelers as they build a new home in the wilderness. Gather resources, construct buildings, and guide your citizens through harsh winters and prosperous summers. There is no winning — only the challenge of keeping your people alive.</p>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>Survival</h3>
+        <p>Your citizens need <a href="citizens.html">food, warmth, and shelter</a> to survive. Without firewood, houses go cold. Without food, people starve. Every decision matters when winter approaches.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Economy</h3>
+        <p>Build <a href="buildings.html">production chains</a> — from raw logs to firewood, from iron ore to tools, from wheat to bread. Manage <a href="resources.html">27 different resources</a> and keep your stockpiles healthy.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Community</h3>
+        <p>Citizens have <a href="citizens.html">personalities, skills, and families</a>. They marry, have children, grow old, and pass on. Build schools, chapels, and taverns to keep morale high.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>The Death Spiral</h2>
+      <p>The central challenge of Exiled is avoiding the <strong>death spiral</strong>: when resources run low, citizens get sick and die. Fewer workers means even less production, leading to more shortages and more deaths. Prevention is everything.</p>
+      <div class="note tip">
+        <strong>New to Exiled?</strong> Start with the <a href="getting-started.html">Getting Started</a> guide for essential first-game tips.
+      </div>
+    </div>
+
+    <h2>Manual Sections</h2>
+    <div class="link-grid" style="margin-top: 0.5rem;">
+      <a href="getting-started.html" class="link-card">
+        Getting Started
+        <small>Surviving your first winter</small>
+      </a>
+      <a href="buildings.html" class="link-card">
+        Buildings
+        <small>All 34 structures explained</small>
+      </a>
+      <a href="resources.html" class="link-card">
+        Resources
+        <small>27 resources and production chains</small>
+      </a>
+      <a href="citizens.html" class="link-card">
+        Citizens
+        <small>Needs, skills, traits, and families</small>
+      </a>
+      <a href="seasons.html" class="link-card">
+        Seasons &amp; Weather
+        <small>12 sub-seasons and weather events</small>
+      </a>
+      <a href="mechanics.html" class="link-card">
+        Mechanics
+        <small>Construction, trade, disease, festivals</small>
+      </a>
+    </div>
+
+    <div class="panel" style="margin-top: 1.5rem;">
+      <h2>Keyboard Shortcuts</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Space</strong></td><td>Pause / unpause</td></tr>
+            <tr><td><strong>1–5</strong></td><td>Set game speed (0×, 1×, 2×, 5×, 10×)</td></tr>
+            <tr><td><strong>B</strong></td><td>Toggle build menu</td></tr>
+            <tr><td><strong>G</strong></td><td>Toggle gather limits panel</td></tr>
+            <tr><td><strong>L</strong></td><td>Toggle event log</td></tr>
+            <tr><td><strong>Escape</strong></td><td>Cancel placement / deselect</td></tr>
+            <tr><td><strong>F3</strong></td><td>Debug overlay</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Starting Conditions</h2>
+      <p>Every new game begins with <strong>20 adults and 2 children</strong>, plus a modest supply of resources to get started:</p>
+      <div class="stat-row" id="starting-resources"></div>
+    </div>
+  </main>
+
+  <footer>
+    Made by <a href="https://quinton.dev" target="_blank" rel="noopener">Quinton Miller</a>
+  </footer>
+
+  <script type="module">
+    import { ManualData } from './data.js';
+    ManualData.initNav();
+
+    const container = document.getElementById('starting-resources');
+    const res = ManualData.startingConditions.resources;
+    for (const [id, qty] of Object.entries(res)) {
+      const el = document.createElement('div');
+      el.className = 'stat';
+      el.innerHTML = `
+        <div class="stat-label">${ManualData.resourceName(id)}</div>
+        <div class="stat-value">${qty}</div>
+      `;
+      container.appendChild(el);
+    }
+  </script>
+</body>
+</html>

@@ -8,6 +8,8 @@ import { BuildMenu } from './BuildMenu';
 import { InfoPanel } from './InfoPanel';
 import { Minimap } from './Minimap';
 import { EventLog } from './EventLog';
+import { ResourceLimitsPanel } from './ResourceLimitsPanel';
+import { VillagerPanel } from './VillagerPanel';
 import { Settings } from '../Settings';
 import { logger, LOG_LEVEL_NAMES } from '../utils/Logger';
 
@@ -17,6 +19,8 @@ export class UIManager {
   private infoPanel: InfoPanel;
   private minimap: Minimap;
   private eventLog: EventLog;
+  private resourceLimitsPanel: ResourceLimitsPanel;
+  private villagerPanel: VillagerPanel;
   buildMenuOpen = false;
   debugOverlay = false;
   debugTile: { x: number; y: number } | null = null;
@@ -28,6 +32,8 @@ export class UIManager {
     this.infoPanel = new InfoPanel(game);
     this.minimap = new Minimap(game);
     this.eventLog = new EventLog(game);
+    this.resourceLimitsPanel = new ResourceLimitsPanel(game);
+    this.villagerPanel = new VillagerPanel(game);
 
     // Listen for events
     game.eventBus.on('citizen_died', (data: any) => {
@@ -38,6 +44,16 @@ export class UIManager {
     });
     game.eventBus.on('merchant_arrived', () => {
       this.addNotification('A merchant has arrived!', '#ffaa44');
+    });
+    game.eventBus.on('nomads_arrived', (data: any) => {
+      const viaLabel = data.via === 'river'
+        ? 'by river'
+        : data.via === 'road'
+          ? 'by road'
+          : data.via === 'outreach'
+            ? 'from outreach'
+            : 'nearby';
+      this.addNotification(`${data.count} newcomers arrived (${viaLabel})`, '#66dd66');
     });
     game.eventBus.on('new_year', (data: any) => {
       this.addNotification(`Year ${data.year} begins`, '#ffffff');
@@ -53,6 +69,18 @@ export class UIManager {
     });
     game.eventBus.on('milestone_achieved', (data: any) => {
       this.addNotification(`Milestone: ${data.name}!`, '#ffcc00');
+    });
+    game.eventBus.on('building_upgrade_started', (data: any) => {
+      this.addNotification(`Upgrading ${data.name} to ${data.targetName}...`, '#ddbb44');
+    });
+    game.eventBus.on('building_upgraded', (data: any) => {
+      this.addNotification(`${data.name} upgrade complete!`, '#ffdd44');
+    });
+    game.eventBus.on('building_demolition_started', (data: any) => {
+      this.addNotification(`Demolishing ${data.name}...`, '#dd8866');
+    });
+    game.eventBus.on('building_demolished', (data: any) => {
+      this.addNotification(`${data.name} demolished`, '#cc7766');
     });
   }
 
@@ -79,12 +107,24 @@ export class UIManager {
     // Event log
     if (this.eventLog.visible && this.eventLog.isPointOver(screenX, screenY)) return true;
 
+    // Resource limits panel
+    if (this.resourceLimitsPanel.visible && this.resourceLimitsPanel.isPointOver(screenX, screenY)) return true;
+
+    // Villager panel
+    if (this.villagerPanel.visible && this.villagerPanel.isPointOver(screenX, screenY)) return true;
+
     return false;
   }
 
   handleClick(screenX: number, screenY: number): boolean {
     // Event log click (highest priority when visible)
     if (this.eventLog.handleClick(screenX, screenY)) return true;
+
+    // Resource limits panel
+    if (this.resourceLimitsPanel.handleClick(screenX, screenY)) return true;
+
+    // Villager panel
+    if (this.villagerPanel.handleClick(screenX, screenY)) return true;
 
     // Convert screen coords to UI coords (account for UI scale)
     const s = Settings.get('uiScale');
@@ -146,12 +186,21 @@ export class UIManager {
     this.eventLog.visible = !this.eventLog.visible;
   }
 
+  toggleResourceLimitsPanel(): void {
+    this.resourceLimitsPanel.visible = !this.resourceLimitsPanel.visible;
+  }
+
+  toggleVillagerPanel(): void {
+    this.villagerPanel.visible = !this.villagerPanel.visible;
+  }
+
   getEventLog(): EventLog {
     return this.eventLog;
   }
 
   handleScroll(delta: number, mouseX: number, mouseY: number): boolean {
-    return this.eventLog.handleScroll(delta, mouseX, mouseY);
+    if (this.eventLog.handleScroll(delta, mouseX, mouseY)) return true;
+    return this.villagerPanel.handleScroll(delta, mouseX, mouseY);
   }
 
   addNotification(text: string, color: string): void {
@@ -193,6 +242,12 @@ export class UIManager {
     // Draw event log
     this.eventLog.draw(ctx, w, h);
 
+    // Draw resource limits panel
+    this.resourceLimitsPanel.draw(ctx, w, h);
+
+    // Draw villager panel
+    this.villagerPanel.draw(ctx, w, h);
+
     // Draw notifications
     this.drawNotifications(ctx);
 
@@ -210,6 +265,20 @@ export class UIManager {
     ctx.fillStyle = '#888';
     ctx.font = '10px monospace';
     ctx.fillText('[L] Log', w - 95, h - 66);
+
+    // Draw keyboard hint for gather limits panel
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(w - 100, h - 108, 90, 22);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px monospace';
+    ctx.fillText('[G] Limits', w - 95, h - 92);
+
+    // Draw keyboard hint for villager panel
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(w - 100, h - 134, 90, 22);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px monospace';
+    ctx.fillText('[V] People', w - 95, h - 118);
 
     // Draw keyboard hint for debug
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
@@ -355,7 +424,7 @@ export class UIManager {
 
     lines.push('');
     lines.push('Resources:');
-    for (const [key, val] of this.game.globalResources) {
+    for (const [key, val] of this.game.resources.buildResourceMap()) {
       if (val > 0) lines.push(`  ${key}: ${Math.floor(val)}`);
     }
 

@@ -14,6 +14,8 @@ const TILE_COLORS: Record<number, string> = {
   [TileType.RIVER]: '#3668b5',
   [TileType.FERTILE]: '#5a9c4a',
   [TileType.ROAD]: '#8a7d6b',
+  [TileType.STONE_ROAD]: '#b0a898',
+  [TileType.BRIDGE]: '#8B6914',
 };
 
 // Building placeholder colors by category
@@ -25,6 +27,22 @@ const BUILDING_COLORS: Record<string, string> = {
   Services: '#5577aa',
   Infrastructure: '#8a7d6b',
   'Services_festival': '#ffdd44', // Used during active festivals for Town Hall glow
+};
+
+// Per-type color overrides (takes priority over category colors)
+const BUILDING_TYPE_COLORS: Record<string, string> = {
+  quarry: '#8a7060',
+  mine: '#4a4040',
+  // Tier-2 upgrades — cooler/richer tones to distinguish from tier-1
+  stone_house:     '#8899bb', // cool blue-grey stone (vs orange-brown wooden house)
+  stone_barn:      '#778899', // slate blue-grey (vs dark brown barn)
+  gathering_lodge: '#3d7a22', // deep forest green (vs mid-green hut)
+  hunting_lodge:   '#4a6633', // dark olive (vs lighter hunting cabin)
+  forestry_hall:   '#7a5522', // deep amber-wood (vs lighter forester lodge)
+  sawmill:         '#7a5a33', // dark wood-brown (vs lighter wood cutter)
+  iron_works:      '#445566', // dark steel blue-grey (vs amber blacksmith)
+  stone_well:      '#5588aa', // stone blue (vs generic services blue)
+  academy:         '#3355cc', // deep blue-indigo (vs medium services blue)
 };
 
 export class RenderSystem {
@@ -64,14 +82,21 @@ export class RenderSystem {
     state: GameState,
     entityData?: {
       citizens: Array<{ id: EntityId; x: number; y: number; isMale: boolean; isChild: boolean; health: number; isSleeping: boolean; isSick: boolean; isChatting: boolean; activity: string; isPregnant: boolean }>;
+      travelers?: Array<{ id: EntityId; x: number; y: number; travelType: 'pass_through' | 'work_seekers' | 'settler_family' }>;
       buildings: Array<{
         id: EntityId; x: number; y: number; w: number; h: number;
         category: string; completed: boolean; progress: number; name: string;
         type?: string; isValidTarget?: boolean; isFullOrInvalid?: boolean;
         cropStage?: number; doorDef?: DoorDef;
+        storageVisual?: {
+          usesGlobalEstimate: boolean;
+          fillRatio: number;
+          unitsPerIcon: number;
+          icons: Array<{ resource: string; label: string; color: string }>;
+        };
         occupants?: Array<{ isMale: boolean; isChild: boolean }>;
       }>;
-      ghosts?: Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef }>;
+      ghosts?: Array<{ x: number; y: number; w: number; h: number; valid: boolean; doorDef?: DoorDef; entryTile?: { x: number; y: number } }>;
       drawParticles?: (ctx: CanvasRenderingContext2D) => void;
       selectedPath?: Array<{ x: number; y: number }>;
     },
@@ -99,6 +124,22 @@ export class RenderSystem {
     // Draw building ghost
     if (entityData?.ghosts) {
       for (const g of entityData.ghosts) {
+        // Draw entry tile beneath the footprint so the footprint border isn't obscured
+        if (g.entryTile) {
+          const ex = g.entryTile.x * TILE_SIZE;
+          const ey = g.entryTile.y * TILE_SIZE;
+          ctx.globalAlpha = 0.65;
+          ctx.fillStyle = g.valid ? '#ffdd00' : '#ff6600';
+          ctx.fillRect(ex, ey, TILE_SIZE, TILE_SIZE);
+          ctx.strokeStyle = g.valid ? '#ffdd00' : '#ff6600';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([3, 3]);
+          ctx.strokeRect(ex + 1, ey + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+        }
+
+        // Draw main footprint
         ctx.globalAlpha = 0.5;
         ctx.fillStyle = g.valid ? '#00ff0066' : '#ff000066';
         ctx.fillRect(g.x * TILE_SIZE, g.y * TILE_SIZE, g.w * TILE_SIZE, g.h * TILE_SIZE);
@@ -124,6 +165,13 @@ export class RenderSystem {
       }
     }
 
+    // Draw transient road travelers
+    if (entityData?.travelers) {
+      for (const t of entityData.travelers) {
+        this.drawTraveler(ctx, t);
+      }
+    }
+
     // Draw particles (in world space, above citizens)
     if (entityData?.drawParticles) {
       entityData.drawParticles(ctx);
@@ -140,7 +188,7 @@ export class RenderSystem {
   private drawNightOverlay(
     ctx: CanvasRenderingContext2D,
     state: GameState,
-    buildings?: Array<{ x: number; y: number; w: number; h: number; completed: boolean; type?: string }>,
+    buildings?: Array<{ x: number; y: number; w: number; h: number; completed: boolean; type?: string; warmthLevel?: number }>,
   ): void {
     const bounds = this.camera.getVisibleBounds();
     const worldX = bounds.startX * TILE_SIZE;
@@ -161,15 +209,19 @@ export class RenderSystem {
       ctx.fillRect(worldX, worldY, worldW, worldH);
     }
 
-    // House firelight glow at night
+    // Firelight glow at night for houses and warm heated public buildings
     if (state.nightAlpha > 0.2 && buildings) {
       for (const b of buildings) {
         if (!b.completed) continue;
-        if (b.type !== 'wooden_house') continue;
+
+        const isHouse = b.type === 'wooden_house' || b.type === 'stone_house';
+        const isWarmHeated = b.warmthLevel !== undefined && b.warmthLevel > 30;
+        if (!isHouse && !isWarmHeated) continue;
 
         const cx = (b.x + b.w / 2) * TILE_SIZE;
         const cy = (b.y + b.h / 2) * TILE_SIZE;
-        const radius = TILE_SIZE * 3;
+        // Larger buildings get a proportionally larger glow
+        const radius = TILE_SIZE * Math.max(3, (b.w + b.h) / 2 * 1.5);
 
         const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
         gradient.addColorStop(0, `rgba(255, 200, 80, ${state.nightAlpha * 0.5})`);
@@ -204,6 +256,37 @@ export class RenderSystem {
           ctx.fillStyle = '#9a8d7b';
           ctx.fillRect(px + TILE_SIZE / 2 - 1, py, 2, TILE_SIZE);
           ctx.fillRect(px, py + TILE_SIZE / 2 - 1, TILE_SIZE, 2);
+        } else if (tile.type === TileType.STONE_ROAD) {
+          // Stone road: solid cross + corner accents for a paved look
+          ctx.fillStyle = '#c8bfb0';
+          ctx.fillRect(px + TILE_SIZE / 2 - 1, py, 2, TILE_SIZE);
+          ctx.fillRect(px, py + TILE_SIZE / 2 - 1, TILE_SIZE, 2);
+          // Corner stones
+          ctx.fillStyle = '#a09888';
+          ctx.fillRect(px + 1, py + 1, 4, 4);
+          ctx.fillRect(px + TILE_SIZE - 5, py + 1, 4, 4);
+          ctx.fillRect(px + 1, py + TILE_SIZE - 5, 4, 4);
+          ctx.fillRect(px + TILE_SIZE - 5, py + TILE_SIZE - 5, 4, 4);
+        }
+
+        // Bridge plank visuals
+        if (tile.type === TileType.BRIDGE) {
+          ctx.strokeStyle = '#6b4f10';
+          ctx.lineWidth = 1;
+          const spacing = TILE_SIZE / 4;
+          for (let i = 1; i < 4; i++) {
+            const lineY = py + Math.round(i * spacing);
+            ctx.beginPath();
+            ctx.moveTo(px + 2, lineY);
+            ctx.lineTo(px + TILE_SIZE - 2, lineY);
+            ctx.stroke();
+          }
+          ctx.strokeStyle = '#5c3a0a';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(px + 1, py + 2); ctx.lineTo(px + TILE_SIZE - 1, py + 2);
+          ctx.moveTo(px + 1, py + TILE_SIZE - 2); ctx.lineTo(px + TILE_SIZE - 1, py + TILE_SIZE - 2);
+          ctx.stroke();
         }
 
         // Draw tree indicators on forest tiles — size and shade vary by density
@@ -225,7 +308,7 @@ export class RenderSystem {
 
         // Stone deposits — size varies by remaining amount
         if (tile.type === TileType.STONE) {
-          const stoneRatio = Math.max(0.3, (tile.stoneAmount || 50) / 50);
+          const stoneRatio = Math.max(0.3, (tile.stoneAmount || 200) / 200);
           ctx.fillStyle = '#aaa';
           ctx.beginPath();
           ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 3 + 5 * stoneRatio, 0, Math.PI * 2);
@@ -234,7 +317,7 @@ export class RenderSystem {
 
         // Iron deposits — size varies by remaining amount
         if (tile.type === TileType.IRON) {
-          const ironRatio = Math.max(0.3, (tile.ironAmount || 30) / 30);
+          const ironRatio = Math.max(0.3, (tile.ironAmount || 100) / 100);
           ctx.fillStyle = '#c4863a';
           ctx.beginPath();
           ctx.arc(px + TILE_SIZE / 2, py + TILE_SIZE / 2, 3 + 4 * ironRatio, 0, Math.PI * 2);
@@ -306,14 +389,28 @@ export class RenderSystem {
 
   private drawBuilding(
     ctx: CanvasRenderingContext2D,
-    b: { x: number; y: number; w: number; h: number; category: string; completed: boolean; progress: number; name: string; isValidTarget?: boolean; isFullOrInvalid?: boolean; type?: string; cropStage?: number; doorDef?: DoorDef; occupants?: Array<{ isMale: boolean; isChild: boolean }> },
+    b: {
+      x: number; y: number; w: number; h: number;
+      category: string; completed: boolean; progress: number; name: string;
+      isValidTarget?: boolean; isFullOrInvalid?: boolean;
+      type?: string; cropStage?: number; doorDef?: DoorDef;
+      isUpgrading?: boolean; upgradeProgress?: number;
+      storageVisual?: {
+        usesGlobalEstimate: boolean;
+        fillRatio: number;
+        unitsPerIcon: number;
+        icons: Array<{ resource: string; label: string; color: string }>;
+      };
+      occupants?: Array<{ isMale: boolean; isChild: boolean }>;
+      mineVeinRatio?: number;
+    },
   ): void {
     const px = b.x * TILE_SIZE;
     const py = b.y * TILE_SIZE;
     const pw = b.w * TILE_SIZE;
     const ph = b.h * TILE_SIZE;
 
-    const color = BUILDING_COLORS[b.category] || '#888';
+    const color = (b.type && BUILDING_TYPE_COLORS[b.type]) || BUILDING_COLORS[b.category] || '#888';
 
     if (b.completed) {
       // Special crop field rendering with growth stages
@@ -326,14 +423,39 @@ export class RenderSystem {
         ctx.lineWidth = 1;
         ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
       }
+      // Storage buildings show representative contents from the global storage mix.
+      if (b.storageVisual) {
+        this.drawStorageContents(ctx, px, py, pw, ph, b.storageVisual);
+      }
       // Draw door on completed buildings
       if (b.doorDef) {
         this.drawDoor(ctx, b.x, b.y, b.doorDef, '#5c3a1a');
       }
-      // Draw occupant indicators inside the building
-      if (b.occupants && b.occupants.length > 0) {
-        this.drawOccupants(ctx, px, py, pw, ph, b.occupants);
+      // Draw vein depletion bar for mine/quarry buildings
+      if ((b.type === 'quarry' || b.type === 'mine') && b.mineVeinRatio !== undefined) {
+        const barH = 3;
+        const barY = py + ph - barH - 1;
+        const ratio = b.mineVeinRatio;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(px + 1, barY, pw - 2, barH);
+        if (ratio > 0) {
+          const barColor = ratio > 0.5 ? '#44cc44' : ratio > 0.2 ? '#ddaa22' : '#cc4444';
+          ctx.fillStyle = barColor;
+          ctx.fillRect(px + 1, barY, Math.floor((pw - 2) * ratio), barH);
+        }
       }
+    } else if (b.type === 'road' || b.type === 'stone_road' || b.type === 'bridge') {
+      // Under-construction road/bridge: compact 1x1 visual without overflow labels
+      const tileColor = b.type === 'road' ? '#8a7d6b' : b.type === 'stone_road' ? '#b0a898' : '#8B6914';
+      ctx.fillStyle = '#555';
+      ctx.fillRect(px, py, pw, ph);
+      ctx.fillStyle = tileColor;
+      ctx.globalAlpha = 0.7;
+      ctx.fillRect(px, py, pw * b.progress, ph);
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
     } else {
       // Under construction - show progress
       ctx.fillStyle = '#555';
@@ -347,6 +469,27 @@ export class RenderSystem {
       ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
     }
 
+    // Upgrade indicator (drawn over the completed building, below assignment highlights)
+    if (b.completed && b.isUpgrading) {
+      // Gold border around the building
+      ctx.strokeStyle = '#ddbb44';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, py, pw, ph);
+
+      // Progress bar along the top edge (avoids conflict with mine/quarry bar at bottom)
+      const barH = 3;
+      const barY = py + 1;
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(px + 1, barY, pw - 2, barH);
+      ctx.fillStyle = '#ffdd44';
+      ctx.fillRect(px + 1, barY, Math.floor((pw - 2) * (b.upgradeProgress ?? 0)), barH);
+    }
+
+    // Occupant indicators drawn last so they're always on top of upgrade UI and other overlays
+    if (b.completed && b.occupants && b.occupants.length > 0) {
+      this.drawOccupants(ctx, px, py, pw, ph, b.occupants);
+    }
+
     // Assignment mode highlights
     if (b.isValidTarget) {
       ctx.strokeStyle = '#00ff66';
@@ -356,6 +499,74 @@ export class RenderSystem {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
       ctx.fillRect(px + 1, py + 1, pw - 2, ph - 2);
     }
+  }
+
+  private drawStorageContents(
+    ctx: CanvasRenderingContext2D,
+    px: number,
+    py: number,
+    pw: number,
+    ph: number,
+    storageVisual: {
+      fillRatio: number;
+      unitsPerIcon: number;
+      icons: Array<{ label: string; color: string }>;
+    },
+  ): void {
+    if (pw < 24 || ph < 24) return;
+
+    const pad = 4;
+    const barHeight = 3;
+    const innerW = Math.max(8, pw - pad * 2);
+    const innerH = Math.max(8, ph - pad * 2 - barHeight - 2);
+
+    const iconSize = Math.max(8, Math.min(11, Math.floor(Math.min(innerW / 4, innerH / 3))));
+    const step = iconSize + 3;
+    const cols = Math.max(1, Math.floor(innerW / step));
+    const rows = Math.max(1, Math.floor(innerH / step));
+    const maxVisible = cols * rows;
+    const icons = storageVisual.icons.slice(0, maxVisible);
+
+    if (icons.length > 0) {
+      const gridW = cols * step - 3;
+      const startX = px + pad + Math.max(0, Math.floor((innerW - gridW) / 2));
+      const startY = py + pad + 1;
+
+      ctx.font = `bold ${Math.max(6, iconSize - 3)}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      for (let i = 0; i < icons.length; i++) {
+        const icon = icons[i];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const ix = startX + col * step;
+        const iy = startY + row * step;
+
+        ctx.fillStyle = icon.color;
+        ctx.fillRect(ix, iy, iconSize, iconSize);
+        ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(ix, iy, iconSize, iconSize);
+
+        ctx.fillStyle = '#111111';
+        ctx.fillText(icon.label, ix + iconSize / 2, iy + iconSize / 2 + 0.5);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    const barX = px + pad;
+    const barY = py + ph - pad - barHeight;
+    const barW = innerW;
+    const fillW = Math.floor(barW * Math.max(0, Math.min(1, storageVisual.fillRatio)));
+
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(barX, barY, barW, barHeight);
+    ctx.fillStyle = storageVisual.fillRatio >= 1 ? '#ff4444' : storageVisual.fillRatio > 0.8 ? '#ddaa22' : '#66bb66';
+    if (fillW > 0) ctx.fillRect(barX, barY, fillW, barHeight);
+
   }
 
   /** Draw semi-transparent citizen dots and a count badge inside a building */
@@ -542,6 +753,34 @@ export class RenderSystem {
       ctx.arc(px, py, radius + 3, 0, Math.PI * 2);
       ctx.stroke();
     }
+  }
+
+  private drawTraveler(
+    ctx: CanvasRenderingContext2D,
+    t: { x: number; y: number; travelType: 'pass_through' | 'work_seekers' | 'settler_family' },
+  ): void {
+    const px = t.x * TILE_SIZE + TILE_SIZE / 2;
+    const py = t.y * TILE_SIZE + TILE_SIZE / 2;
+
+    let color = '#d8c39a';
+    let radius = 4;
+    if (t.travelType === 'work_seekers') {
+      color = '#b8d1a6';
+      radius = 4.5;
+    } else if (t.travelType === 'settler_family') {
+      color = '#d6b0c8';
+      radius = 5;
+    }
+
+    // Traveler body
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pack marker to visually separate travelers from citizens
+    ctx.fillStyle = '#5c4a2f';
+    ctx.fillRect(px - 2, py - radius - 3, 4, 3);
   }
 
   private drawCropField(ctx: CanvasRenderingContext2D, px: number, py: number, pw: number, ph: number, stage: number): void {

@@ -9,6 +9,7 @@ import {
   DISEASE_COLD_THRESHOLD, DISEASE_COLD_MULT,
   DISEASE_WEAK_THRESHOLD, DISEASE_WEAK_MULT,
   FROST_FAIR_DISEASE_MULT,
+  BATHE_DISEASE_SPREAD_MULT, BATHE_CLEAN_DURATION_TICKS,
 } from '../constants';
 import { distance } from '../utils/MathUtils';
 
@@ -109,10 +110,14 @@ export class DiseaseSystem {
       const pos = world.getComponent<any>(id, 'position')!;
       const d = distance(sickPos.tileX, sickPos.tileY, pos.tileX, pos.tileY);
       if (d <= DISEASE_SPREAD_RADIUS) {
-        if (Math.random() < DISEASE_SPREAD_CHANCE * DISEASE_TICK_INTERVAL) {
+        const citizen = world.getComponent<any>(id, 'citizen');
+        const isClean = citizen?.lastBatheTick !== undefined
+          && (this.game.state.tick - citizen.lastBatheTick) < BATHE_CLEAN_DURATION_TICKS;
+        const spreadChance = DISEASE_SPREAD_CHANCE * DISEASE_TICK_INTERVAL
+          * (isClean ? BATHE_DISEASE_SPREAD_MULT : 1.0);
+        if (Math.random() < spreadChance) {
           needs.isSick = true;
           needs.diseaseTicks = 0;
-          const citizen = world.getComponent<any>(id, 'citizen');
           this.game.eventBus.emit('citizen_sick', {
             id,
             name: citizen?.name || 'Unknown',

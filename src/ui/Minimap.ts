@@ -128,6 +128,7 @@ export class Minimap {
       case TileType.IRON: return [107, 91, 62];
       case TileType.RIVER: return [54, 104, 181];
       case TileType.FERTILE: return [90, 156, 74];
+      case TileType.BRIDGE: return [139, 105, 20];
       default: return [74, 140, 63];
     }
   }

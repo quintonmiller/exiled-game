@@ -17,8 +17,8 @@ export interface TileData {
   ironAmount: number;      // 0-30+ resource remaining in iron deposit
   blocksMovement: boolean; // does the building on this tile block NPC pathfinding
   // Harvestable map resources (depletable, regrowing)
-  berries: number;         // 0-5 berry bushes
-  mushrooms: number;       // 0-3 mushroom patches
+  berries: number;         // 0-8 berry bushes
+  mushrooms: number;       // 0-5 mushroom patches
   herbs: number;           // 0-3 herb plants
   fish: number;            // 0-8 fish population
   wildlife: number;        // 0-3 wildlife density
@@ -49,6 +49,15 @@ export interface BuildingDef {
   minHeight?: number;
   maxWidth?: number;        // maximum drag dimension (default FLEXIBLE_MAX_SIZE)
   maxHeight?: number;
+  // ── Upgrade system ───────────────────────────────────────────
+  upgradesTo?: BuildingType;     // this building can be upgraded to that type
+  upgradeFrom?: BuildingType;    // this is a tier-2 building upgraded from that base
+  upgradeCostLog?: number;
+  upgradeCostStone?: number;
+  upgradeCostIron?: number;
+  upgradeWork?: number;          // total work units required
+  upgradeSizeW?: number;         // new width if the footprint expands
+  upgradeSizeH?: number;         // new height if the footprint expands
 }
 
 export interface RecipeDef {
@@ -107,6 +116,8 @@ export interface GameState {
   assigningWorker: EntityId | null;
   // Festival state
   festival: FestivalState | null;
+  // Global resource limits: keyed by building type or resource name, value = max stock
+  resourceLimits: Record<string, number>;
 }
 
 export type FestivalType = 'planting_day' | 'midsummer' | 'harvest_festival' | 'frost_fair';
@@ -130,4 +141,35 @@ export interface EventLogEntry {
   entityId?: number;
   tileX?: number;
   tileY?: number;
+}
+
+export interface CitizenRenderData {
+  id: EntityId; x: number; y: number; isMale: boolean;
+  isChild: boolean; health: number; isSleeping: boolean; isSick: boolean;
+  isChatting: boolean; activity: string; isPregnant: boolean;
+}
+
+export interface TravelerRenderData {
+  id: EntityId;
+  x: number;
+  y: number;
+  travelType: 'pass_through' | 'work_seekers' | 'settler_family';
+}
+
+export interface BuildingRenderData {
+  id: EntityId; x: number; y: number; w: number; h: number;
+  category: string; completed: boolean; progress: number; name: string;
+  type: string; isValidTarget?: boolean; isFullOrInvalid?: boolean;
+  cropStage?: number; doorDef?: DoorDef;
+  storageVisual?: {
+    usesGlobalEstimate: boolean;
+    fillRatio: number;
+    unitsPerIcon: number;
+    icons: Array<{ resource: string; label: string; color: string }>;
+  };
+  occupants?: Array<{ isMale: boolean; isChild: boolean }>;
+  mineVeinRatio?: number; // 0-1 remaining vein ratio for QUARRY/MINE
+  isUpgrading?: boolean;
+  upgradeProgress?: number; // 0-1
+  warmthLevel?: number; // for heated buildings — drives night glow
 }

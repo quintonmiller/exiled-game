@@ -88,6 +88,22 @@ src/
 - **`data/SeasonDefs.ts`** — per-season temperature, crop growth, gathering rates
 - **Rule:** change numbers in config files, not in system code
 
+### Gameplay manual sync (required)
+- Manual pages are served from `public/manual/`:
+  - `public/manual/index.html`
+  - `public/manual/buildings.html`
+  - `public/manual/resources.html`
+  - `public/manual/mechanics.html`
+- Pause menu has a **Gameplay Manual** button that opens this site in a new tab.
+- When gameplay/data changes, update relevant manual pages in the same PR.
+- Always review manual accuracy after edits to:
+  - `src/constants.ts`
+  - `src/data/BuildingDefs.ts`
+  - `src/data/ResourceDefs.ts`
+  - `src/data/RecipeDefs.ts`
+  - `src/data/SeasonDefs.ts`
+  - `src/systems/*` (if formulas/behavior changed)
+
 ### Citizen AI Priority Order
 1. Already sleeping -> stay asleep (wake if energy full + daytime, or if starving)
 2. Starving (food < `STARVING_THRESHOLD`) -> urgent food
@@ -103,12 +119,12 @@ src/
 11. Wander randomly (adventurous trait gains happiness)
 
 ### Day/Night & Construction Timing
-- `TICKS_PER_DAY = 1800` (3 minutes real time at 1x)
+- `TICKS_PER_DAY = 600` (60 seconds real time at 1x)
 - Day/night cycle uses `state.tick % TICKS_PER_DAY` (decoupled from season progression)
-- Season length: `TICKS_PER_SUB_SEASON = 600` (60 seconds), 12 sub-seasons per year
+- Season length: `TICKS_PER_SUB_SEASON = 3000` (5 in-game days), 12 sub-seasons per year
 - Working hours: ~55% of day (dawn 0.2 to dusk 0.75)
 - Construction formula: `ticks = constructionWork / (numWorkers * CONSTRUCTION_WORK_RATE)`
-- Example: House (250 work) with 3 workers → 2778 ticks ≈ 1.5 days
+- Example: House (250 work) with 3 workers → 2778 ticks ≈ 4.6 days
 - Production formula: `cooldownTicks / efficiency` per cycle (efficiency = workers/maxWorkers × seasonal × education)
 
 ## Common Pitfalls
@@ -130,6 +146,8 @@ src/
 - **Space** — Pause/unpause
 - **1-5** — Speed (0x, 1x, 2x, 5x, 10x)
 - **B** — Toggle build menu
+- **G** — Toggle gather limits panel
+- **L** — Toggle event log
 - **Escape** — Cancel placement / deselect
 - **F3** — Debug overlay
 - **R** — Restart (game over screen only)
