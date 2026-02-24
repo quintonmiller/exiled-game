@@ -5,7 +5,24 @@ import { EntityId } from '../types';
 import { estimateStorageContentsForBuilding } from '../utils/StorageContents';
 import { BUILDING_DEFS } from '../data/BuildingDefs';
 
-const PANEL_HEIGHT = 600;
+const PANEL_MARGIN = 10;
+const PANEL_MIN_HEIGHT = 220;
+const PANEL_PADDING = 10;
+const SCROLL_STEP = 24;
+const MAX_SKILLS_SHOWN = 5;
+const MAX_RELATIONSHIPS_SHOWN = 3;
+const MAX_CHILDREN_INLINE = 3;
+const MAX_WORKERS_LISTED = 6;
+const MAX_RESIDENTS_LISTED = 6;
+const MAX_INSIDE_LISTED = 6;
+const SECTION_RULE_ALPHA = 0.3;
+const VITALS_SECTION_GAP = 8;
+const WORK_HEADING_GAP = 4;
+const POST_WORK_BUTTONS_GAP = 10;
+const FAMILY_HEADING_TOP_GAP = 4;
+const FAMILY_HEADING_GAP = 4;
+const RELATIONSHIPS_HEADING_GAP = 4;
+const ACTIVITY_HEADING_GAP = 4;
 const BTN_WIDTH = 120;
 const BTN_HEIGHT = 22;
 
@@ -19,6 +36,12 @@ interface LinkRect {
 
 export class InfoPanel {
   private game: Game;
+  private panelRect = { x: 0, y: 0, w: 0, h: 0 };
+  private contentRect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollOffset = 0;
+  private maxScroll = 0;
+  private scrollUpRect = { x: 0, y: 0, w: 0, h: 0 };
+  private scrollDownRect = { x: 0, y: 0, w: 0, h: 0 };
 
   // Button hit-test rects (in UI-scaled coords)
   private assignBtnRect: { x: number; y: number; w: number; h: number } | null = null;
@@ -34,6 +57,27 @@ export class InfoPanel {
     this.game = game;
   }
 
+  isPointOver(screenX: number, screenY: number): boolean {
+    const s = Settings.get('uiScale');
+    const x = screenX / s;
+    const y = screenY / s;
+    const r = this.panelRect;
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+
+  handleScroll(delta: number, mouseX: number, mouseY: number): boolean {
+    if (this.maxScroll <= 0) return false;
+    const s = Settings.get('uiScale');
+    const x = mouseX / s;
+    const y = mouseY / s;
+    const cr = this.contentRect;
+    if (x < cr.x || x > cr.x + cr.w || y < cr.y || y > cr.y + cr.h) return false;
+
+    const direction = Math.sign(delta);
+    this.scrollOffset = Math.max(0, Math.min(this.maxScroll, this.scrollOffset - direction * SCROLL_STEP));
+    return true;
+  }
+
   /** Returns true if the click was consumed by a button or link */
   handleClick(screenX: number, screenY: number): boolean {
     const s = Settings.get('uiScale');
@@ -42,6 +86,18 @@ export class InfoPanel {
 
     const id = this.game.state.selectedEntity;
     if (id === null) return false;
+    if (!this.isPointOver(screenX, screenY)) return false;
+
+    const su = this.scrollUpRect;
+    if (su.h > 0 && x >= su.x && x <= su.x + su.w && y >= su.y && y <= su.y + su.h) {
+      this.scrollOffset = Math.max(0, this.scrollOffset - SCROLL_STEP);
+      return true;
+    }
+    const sd = this.scrollDownRect;
+    if (sd.h > 0 && x >= sd.x && x <= sd.x + sd.w && y >= sd.y && y <= sd.y + sd.h) {
+      this.scrollOffset = Math.min(this.maxScroll, this.scrollOffset + SCROLL_STEP);
+      return true;
+    }
 
     // Check clickable entity links
     for (const link of this.linkRects) {
@@ -78,10 +134,10 @@ export class InfoPanel {
     }
 
     const citizen = this.game.world.getComponent<any>(id, 'citizen');
-    if (!citizen) return false;
+    if (!citizen) return true;
 
     const worker = this.game.world.getComponent<any>(id, 'worker');
-    if (!worker) return false;
+    if (!worker) return true;
 
     // Check [Assign] button
     if (this.assignBtnRect) {
@@ -101,7 +157,7 @@ export class InfoPanel {
       }
     }
 
-    return false;
+    return true;
   }
 
   /** Select an entity and center the camera on it */
@@ -121,10 +177,13 @@ export class InfoPanel {
     x: number,
     y: number,
     entityId: EntityId,
+    maxWidth = Number.POSITIVE_INFINITY,
   ): number {
-    const width = ctx.measureText(text).width;
+    const label = this.truncateText(ctx, text, maxWidth);
+    if (label.length === 0) return 0;
+    const width = ctx.measureText(label).width;
     ctx.fillStyle = '#55ccff';
-    ctx.fillText(text, x, y);
+    ctx.fillText(label, x, y);
     // Underline
     ctx.strokeStyle = '#55ccff';
     ctx.lineWidth = 1;
@@ -132,8 +191,13 @@ export class InfoPanel {
     ctx.moveTo(x, y + 2);
     ctx.lineTo(x + width, y + 2);
     ctx.stroke();
-    // Register hit rect (text is drawn from baseline, so top is ~10px above)
-    this.linkRects.push({ x, y: y - 11, w: width, h: 14, entityId });
+    // Register hit rect for visible links only (text baseline is ~10px above).
+    const top = y - 11;
+    const bottom = top + 14;
+    const cr = this.contentRect;
+    if (bottom >= cr.y && top <= cr.y + cr.h) {
+      this.linkRects.push({ x, y: top, w: width, h: 14, entityId });
+    }
     return width;
   }
 
@@ -155,29 +219,46 @@ export class InfoPanel {
       return;
     }
 
-    const x = canvasWidth - INFO_PANEL_WIDTH;
-    const y = HUD_HEIGHT + 10;
-    const w = INFO_PANEL_WIDTH - 10;
+    const panelW = Math.min(INFO_PANEL_WIDTH, Math.max(190, canvasWidth - PANEL_MARGIN * 2));
+    const x = canvasWidth - panelW - PANEL_MARGIN;
+    const y = HUD_HEIGHT + PANEL_MARGIN;
+    const panelH = Math.max(PANEL_MIN_HEIGHT, canvasHeight - y - PANEL_MARGIN);
+    this.panelRect = { x, y, w: panelW, h: panelH };
+    this.scrollUpRect = { x: 0, y: 0, w: 0, h: 0 };
+    this.scrollDownRect = { x: 0, y: 0, w: 0, h: 0 };
 
     // Background
     ctx.fillStyle = 'rgba(20, 20, 30, 0.9)';
-    ctx.fillRect(x, y, w, PANEL_HEIGHT);
+    ctx.fillRect(x, y, panelW, panelH);
     ctx.strokeStyle = '#555';
-    ctx.strokeRect(x, y, w, PANEL_HEIGHT);
+    ctx.strokeRect(x, y, panelW, panelH);
 
-    let textY = y + 20;
-    const leftX = x + 10;
-    ctx.font = '12px monospace';
+    const contentX = x + PANEL_PADDING;
+    const contentY = y + PANEL_PADDING;
+    const scrollGutterW = 12;
+    const contentW = Math.max(120, panelW - PANEL_PADDING * 2 - scrollGutterW);
+    const contentH = Math.max(60, panelH - PANEL_PADDING * 2);
+    this.contentRect = { x: contentX, y: contentY, w: contentW, h: contentH };
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(contentX, contentY, contentW, contentH);
+    ctx.clip();
+
+    const startY = contentY + 10;
+    let textY = startY - this.scrollOffset;
+    const leftX = contentX;
+    ctx.font = '11px monospace';
 
     // Citizen info
     const citizen = world.getComponent<any>(id, 'citizen');
     if (citizen) {
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px monospace';
+      ctx.font = 'bold 13px monospace';
       ctx.fillText(citizen.name, leftX, textY);
       textY += 20;
 
-      ctx.font = '12px monospace';
+      ctx.font = '11px monospace';
       ctx.fillStyle = '#aaaaaa';
       ctx.fillText(`Age: ${citizen.age}  ${citizen.isMale ? 'Male' : 'Female'}`, leftX, textY);
       textY += 16;
@@ -216,23 +297,28 @@ export class InfoPanel {
 
       // Needs bars
       const needs = world.getComponent<any>(id, 'needs');
+      const familyEarly = world.getComponent<any>(id, 'family');
+      const showVitals = !!needs || !!needs?.isSick || citizen.isSleeping || !!familyEarly?.isPregnant || !!needs?.recentDiet?.length;
+      if (showVitals) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Vitals');
+      }
       if (needs) {
-        this.drawBar(ctx, leftX, textY, w - 20, 'Food', needs.food, '#44aa44');
+        this.drawBar(ctx, leftX, textY, contentW, 'Food', needs.food, '#44aa44');
         textY += 18;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Energy', needs.energy ?? 100, '#ffdd44');
+        this.drawBar(ctx, leftX, textY, contentW, 'Energy', needs.energy ?? 100, '#ffdd44');
         textY += 18;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Warmth', needs.warmth, '#ff8844');
+        this.drawBar(ctx, leftX, textY, contentW, 'Warmth', needs.warmth, '#ff8844');
         textY += 18;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Health', needs.health, '#ff4444');
+        this.drawBar(ctx, leftX, textY, contentW, 'Health', needs.health, '#ff4444');
         textY += 18;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Happy', needs.happiness, '#44aaff');
+        this.drawBar(ctx, leftX, textY, contentW, 'Happy', needs.happiness, '#44aaff');
         textY += 22;
       }
 
       // Sleeping status
       if (citizen.isSleeping) {
         ctx.fillStyle = '#aaaaff';
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillText('Sleeping...', leftX, textY);
         textY += 16;
       }
@@ -240,13 +326,12 @@ export class InfoPanel {
       // Disease status
       if (needs?.isSick) {
         ctx.fillStyle = '#44dd44';
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillText('SICK', leftX, textY);
         textY += 16;
       }
 
       // Pregnancy status
-      const familyEarly = world.getComponent<any>(id, 'family');
       if (familyEarly?.isPregnant) {
         const ticks = familyEarly.pregnancyTicks || 0;
         let trimesterLabel: string;
@@ -263,22 +348,29 @@ export class InfoPanel {
         }
 
         ctx.fillStyle = trimesterColor;
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillText(`Pregnant (${trimesterLabel})`, leftX, textY);
         textY += 16;
 
         const progressPct = Math.min(100, (ticks / PREGNANCY_DURATION_TICKS) * 100);
-        this.drawBar(ctx, leftX, textY, w - 20, 'Preg.', progressPct, trimesterColor);
+        this.drawBar(ctx, leftX, textY, contentW, 'Preg.', progressPct, trimesterColor);
         textY += 18;
 
         // Father
         if (familyEarly.pregnancyPartnerId != null && world.entityExists(familyEarly.pregnancyPartnerId)) {
           const father = world.getComponent<any>(familyEarly.pregnancyPartnerId, 'citizen');
-          ctx.font = '12px monospace';
+          ctx.font = '11px monospace';
           ctx.fillStyle = '#cccccc';
           const fatherLabelW = ctx.measureText('Father: ').width;
           ctx.fillText('Father: ', leftX, textY);
-          this.drawLink(ctx, father?.name || 'Unknown', leftX + fatherLabelW, textY, familyEarly.pregnancyPartnerId);
+          this.drawLink(
+            ctx,
+            father?.name || 'Unknown',
+            leftX + fatherLabelW,
+            textY,
+            familyEarly.pregnancyPartnerId,
+            Math.max(24, contentW - fatherLabelW),
+          );
           textY += 16;
         }
       }
@@ -293,12 +385,17 @@ export class InfoPanel {
         ctx.fillText(`Diet: ${dietLabel} (${unique} types)`, leftX, textY);
         textY += 16;
       }
+      if (showVitals) textY += VITALS_SECTION_GAP;
 
       // Worker info + assign/unassign buttons
       const worker = world.getComponent<any>(id, 'worker');
+      let drewWorkButtons = false;
       if (worker) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Work');
+        textY += WORK_HEADING_GAP;
+
         ctx.fillStyle = '#cccccc';
-        ctx.font = '12px monospace';
+        ctx.font = '11px monospace';
         const jobLabel = `Job: ${worker.profession}`;
         ctx.fillText(jobLabel, leftX, textY);
         // Show [Manual] tag if manually assigned
@@ -312,7 +409,7 @@ export class InfoPanel {
 
         if (worker.carrying) {
           ctx.fillStyle = '#cccccc';
-          ctx.font = '12px monospace';
+          ctx.font = '11px monospace';
           ctx.fillText(`Carrying: ${worker.carrying} x${worker.carryAmount}`, leftX, textY);
           textY += 16;
         }
@@ -323,6 +420,7 @@ export class InfoPanel {
           const btnX = leftX;
           const btnY = textY;
           this.assignBtnRect = { x: btnX, y: btnY, w: BTN_WIDTH, h: BTN_HEIGHT };
+          drewWorkButtons = true;
 
           ctx.strokeStyle = '#44cc66';
           ctx.lineWidth = 1;
@@ -339,6 +437,7 @@ export class InfoPanel {
             const ubtnX = leftX;
             const ubtnY = textY;
             this.unassignBtnRect = { x: ubtnX, y: ubtnY, w: BTN_WIDTH, h: BTN_HEIGHT };
+            drewWorkButtons = true;
 
             ctx.strokeStyle = '#cc4444';
             ctx.lineWidth = 1;
@@ -356,11 +455,16 @@ export class InfoPanel {
       // Skills
       const workerForSkills = world.getComponent<any>(id, 'worker');
       if (workerForSkills?.skills) {
-        ctx.fillStyle = '#cccccc';
-        ctx.font = 'bold 11px monospace';
-        ctx.fillText('Skills:', leftX, textY);
-        textY += 14;
-        for (const [skillName, skillData] of Object.entries(workerForSkills.skills)) {
+        if (drewWorkButtons) textY += POST_WORK_BUTTONS_GAP;
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Skills');
+        const allSkills = Object.entries(workerForSkills.skills)
+          .map(([skillName, skillData]) => ({ skillName, skillData: skillData as { xp: number; level: number } }))
+          .sort((a, b) => {
+            const lvl = b.skillData.level - a.skillData.level;
+            return lvl !== 0 ? lvl : b.skillData.xp - a.skillData.xp;
+          });
+        const shownSkills = allSkills.slice(0, MAX_SKILLS_SHOWN);
+        for (const { skillName, skillData } of shownSkills) {
           const sd = skillData as { xp: number; level: number };
           const label = (skillName as string).charAt(0).toUpperCase() + (skillName as string).slice(1);
           const progress = sd.level >= SKILL_MAX_LEVEL ? 100 : (sd.xp / SKILL_XP_PER_LEVEL) * 100;
@@ -370,17 +474,23 @@ export class InfoPanel {
           ctx.fillText(`${label} Lv${sd.level}`, leftX, textY + 9);
           // Mini progress bar
           const barX = leftX + 90;
-          const barW = w - 110;
+          const barW = Math.max(20, contentW - 100);
           ctx.fillStyle = '#333';
           ctx.fillRect(barX, textY, barW, 10);
           ctx.fillStyle = levelColor;
           ctx.fillRect(barX, textY, barW * (progress / 100), 10);
           if (sd.level >= SKILL_MAX_LEVEL) {
             ctx.fillStyle = '#ffdd44';
-            ctx.font = 'bold 9px monospace';
+            ctx.font = 'bold 10px monospace';
             ctx.fillText('MAX', barX + 2, textY + 8);
           }
           textY += 14;
+        }
+        if (allSkills.length > shownSkills.length) {
+          ctx.fillStyle = '#888888';
+          ctx.font = '10px monospace';
+          ctx.fillText(`+${allSkills.length - shownSkills.length} more`, leftX, textY);
+          textY += 12;
         }
         textY += 4;
       }
@@ -388,7 +498,11 @@ export class InfoPanel {
       // Family info
       const family = world.getComponent<any>(id, 'family');
       if (family) {
-        ctx.font = '12px monospace';
+        textY += FAMILY_HEADING_TOP_GAP;
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Family');
+        textY += FAMILY_HEADING_GAP;
+
+        ctx.font = '11px monospace';
         const relationshipLabel = family.relationshipStatus
           ? (family.relationshipStatus.charAt(0).toUpperCase() + family.relationshipStatus.slice(1))
           : 'Single';
@@ -401,7 +515,7 @@ export class InfoPanel {
           ctx.fillStyle = '#cccccc';
           const labelW = ctx.measureText('Partner: ').width;
           ctx.fillText('Partner: ', leftX, textY);
-          this.drawLink(ctx, partner?.name || 'Unknown', leftX + labelW, textY, family.partnerId);
+          this.drawLink(ctx, partner?.name || 'Unknown', leftX + labelW, textY, family.partnerId, Math.max(24, contentW - labelW));
           textY += 16;
 
           // Compatibility
@@ -426,55 +540,60 @@ export class InfoPanel {
           }
         }
         if (family.childrenIds.length > 0) {
+          const validChildren = family.childrenIds.filter((childId: EntityId) => world.entityExists(childId));
           ctx.fillStyle = '#cccccc';
-          ctx.font = '12px monospace';
+          ctx.font = '11px monospace';
           const childLabel = 'Children: ';
           const childLabelW = ctx.measureText(childLabel).width;
           ctx.fillText(childLabel, leftX, textY);
           let cx = leftX + childLabelW;
-          for (let i = 0; i < family.childrenIds.length; i++) {
-            const childId = family.childrenIds[i];
-            if (!world.entityExists(childId)) continue;
+          const shownChildren = validChildren.slice(0, MAX_CHILDREN_INLINE);
+          for (let i = 0; i < shownChildren.length; i++) {
+            const childId = shownChildren[i];
             const child = world.getComponent<any>(childId, 'citizen');
             const childName = child?.name || '?';
-            ctx.font = '12px monospace';
-            const linkW = this.drawLink(ctx, childName, cx, textY, childId);
+            ctx.font = '11px monospace';
+            const linkW = this.drawLink(ctx, childName, cx, textY, childId, Math.max(24, contentW - (cx - leftX)));
             cx += linkW;
-            if (i < family.childrenIds.length - 1) {
+            if (i < shownChildren.length - 1) {
               ctx.fillStyle = '#cccccc';
               ctx.fillText(', ', cx, textY);
               cx += ctx.measureText(', ').width;
             }
           }
+          if (validChildren.length > shownChildren.length) {
+            const extra = ` +${validChildren.length - shownChildren.length}`;
+            ctx.fillStyle = '#888888';
+            ctx.font = '10px monospace';
+            ctx.fillText(extra, cx, textY);
+          }
           textY += 16;
         }
         if (family.homeId !== null && world.entityExists(family.homeId)) {
-          ctx.font = '12px monospace';
+          ctx.font = '11px monospace';
           const homeBld = world.getComponent<any>(family.homeId, 'building');
           const homeLabel = homeBld?.name || 'Home';
           ctx.fillStyle = '#cccccc';
           const hw = ctx.measureText('Home: ').width;
           ctx.fillText('Home: ', leftX, textY);
-          this.drawLink(ctx, homeLabel, leftX + hw, textY, family.homeId);
+          this.drawLink(ctx, homeLabel, leftX + hw, textY, family.homeId, Math.max(24, contentW - hw));
           textY += 16;
         }
 
         // Top relationships
         const rels = family.relationships as Record<number, number> | undefined;
         if (rels) {
-          const sorted = Object.entries(rels)
+          const sortedAll = Object.entries(rels)
             .map(([eid, score]) => ({ id: Number(eid), score: score as number }))
             .filter(e => world.entityExists(e.id) && e.score > 0)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 5);
+            .sort((a, b) => b.score - a.score);
+          const sorted = sortedAll.slice(0, MAX_RELATIONSHIPS_SHOWN);
 
           if (sorted.length > 0) {
-            ctx.font = '11px monospace';
-            ctx.fillStyle = '#999999';
-            ctx.fillText('Relationships', leftX, textY);
-            textY += 14;
+            textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Relationships');
+            textY += RELATIONSHIPS_HEADING_GAP;
 
-            const barMaxW = INFO_PANEL_WIDTH - 30 - 8; // available width for name + bar
+            const barMaxW = Math.max(40, contentW - 8);
             for (const entry of sorted) {
               const other = world.getComponent<any>(entry.id, 'citizen');
               const name = other?.name || '?';
@@ -504,51 +623,68 @@ export class InfoPanel {
 
               textY += 14;
             }
+            if (sortedAll.length > sorted.length) {
+              ctx.fillStyle = '#888888';
+              ctx.font = '10px monospace';
+              ctx.fillText(`+${sortedAll.length - sorted.length} more`, leftX, textY);
+              textY += 12;
+            }
           }
         }
       }
 
       // Activity / Task
       if (citizen.activity && citizen.activity !== 'idle') {
-        ctx.font = '12px monospace';
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Activity');
+        textY += ACTIVITY_HEADING_GAP;
+
+        ctx.font = '11px monospace';
         ctx.fillStyle = '#cccccc';
         const movement = world.getComponent<any>(id, 'movement');
         const activity = citizen.activity as string;
+        let usedSingleLine = false;
 
         if (activity === 'building' && movement?.targetEntity != null && world.entityExists(movement.targetEntity)) {
           const targetBld = world.getComponent<any>(movement.targetEntity, 'building');
           const bldName = targetBld?.name || 'Building';
           const labelW = ctx.measureText('Task: Construct ').width;
           ctx.fillText('Task: Construct ', leftX, textY);
-          this.drawLink(ctx, bldName, leftX + labelW, textY, movement.targetEntity);
+          this.drawLink(ctx, bldName, leftX + labelW, textY, movement.targetEntity, Math.max(24, contentW - labelW));
+          usedSingleLine = true;
         } else if (activity === 'freezing' && movement?.targetEntity != null && world.entityExists(movement.targetEntity)) {
           const targetBld = world.getComponent<any>(movement.targetEntity, 'building');
           const bldName = targetBld?.name || 'Shelter';
           const labelW = ctx.measureText('Task: Seeking warmth at ').width;
           ctx.fillText('Task: Seeking warmth at ', leftX, textY);
-          this.drawLink(ctx, bldName, leftX + labelW, textY, movement.targetEntity);
+          this.drawLink(ctx, bldName, leftX + labelW, textY, movement.targetEntity, Math.max(24, contentW - labelW));
+          usedSingleLine = true;
         } else if (activity !== 'freezing' && worker && worker.workplaceId != null && world.entityExists(worker.workplaceId)) {
           const wpBld = world.getComponent<any>(worker.workplaceId, 'building');
           const wpName = wpBld?.name || 'Workplace';
           const actLabel = this.activityLabel(activity);
           const labelW = ctx.measureText(`Task: ${actLabel} at `).width;
           ctx.fillText(`Task: ${actLabel} at `, leftX, textY);
-          this.drawLink(ctx, wpName, leftX + labelW, textY, worker.workplaceId);
+          this.drawLink(ctx, wpName, leftX + labelW, textY, worker.workplaceId, Math.max(24, contentW - labelW));
+          usedSingleLine = true;
         } else {
           ctx.fillStyle = '#aaaacc';
-          ctx.fillText(`Task: ${this.activityLabel(activity)}`, leftX, textY);
+          textY = this.drawWrappedText(ctx, `Task: ${this.activityLabel(activity)}`, leftX, textY, contentW, 12);
+          textY += 2;
         }
-        textY += 16;
+        if (usedSingleLine) {
+          textY += 16;
+        }
       }
 
-      return;
-    }
-
-    // Building info
-    const building = world.getComponent<any>(id, 'building');
-    if (building) {
+    } else {
+      // Building info
+      const building = world.getComponent<any>(id, 'building');
+      if (!building) {
+        ctx.restore();
+        return;
+      }
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px monospace';
+      ctx.font = 'bold 13px monospace';
       ctx.fillText(building.name, leftX, textY);
       textY += 20;
 
@@ -561,19 +697,20 @@ export class InfoPanel {
 
         ctx.fillStyle = '#bbbbbb';
         ctx.font = '11px monospace';
-        textY = this.drawWrappedText(ctx, buildingDef.description, leftX, textY, w - 20, 13);
+        textY = this.drawWrappedText(ctx, buildingDef.description, leftX, textY, contentW, 13);
         textY += 6;
       }
 
-      ctx.font = '12px monospace';
+      ctx.font = '11px monospace';
       ctx.fillStyle = '#aaaaaa';
+      textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Status');
 
       if (building.isDemolishing) {
         const pct = ((building.demolitionProgress ?? 0) * 100);
-        this.drawBar(ctx, leftX, textY, w - 20, 'Demolition', pct, '#cc6655');
+        this.drawBar(ctx, leftX, textY, contentW, 'Demolition', pct, '#cc6655');
         textY += 22;
       } else if (!building.completed) {
-        this.drawBar(ctx, leftX, textY, w - 20, 'Construction', building.constructionProgress * 100, '#ffaa44');
+        this.drawBar(ctx, leftX, textY, contentW, 'Construction', building.constructionProgress * 100, '#ffaa44');
         textY += 22;
       } else {
         ctx.fillText('Completed', leftX, textY);
@@ -605,7 +742,7 @@ export class InfoPanel {
 
         const btnLabel = `Upgrade to ${upgDef?.name || buildingDef.upgradesTo}`;
         ctx.font = 'bold 11px monospace';
-        const upgBtnW = Math.min(w - 20, ctx.measureText(btnLabel).width + 16);
+        const upgBtnW = Math.min(contentW, ctx.measureText(btnLabel).width + 16);
         const btnX = leftX;
         const btnY = textY;
         this.upgradeBtnRect = { x: btnX, y: btnY, w: upgBtnW, h: BTN_HEIGHT };
@@ -626,11 +763,11 @@ export class InfoPanel {
       } else if (building.isUpgrading) {
         textY += 4;
         ctx.fillStyle = '#ffbb44';
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.fillText('UPGRADING...', leftX, textY);
         textY += 16;
         const pct = (building.upgradeProgress ?? 0) * 100;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Progress', pct, '#ddbb44');
+        this.drawBar(ctx, leftX, textY, contentW, 'Progress', pct, '#ddbb44');
         textY += 22;
       }
 
@@ -661,23 +798,25 @@ export class InfoPanel {
       // Durability bar
       if (building.durability !== undefined) {
         const durColor = building.durability > 60 ? '#44aa44' : building.durability > 30 ? '#ddaa22' : '#ff4444';
-        this.drawBar(ctx, leftX, textY, w - 20, 'Cond.', building.durability, durColor);
+        this.drawBar(ctx, leftX, textY, contentW, 'Cond.', building.durability, durColor);
         textY += 18;
       }
 
       // Storage capacity (for storage buildings)
       if (building.isStorage && building.storageCapacity) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Storage');
+
         const estimate = estimateStorageContentsForBuilding(this.game.world, this.game.resources.globalResources, id, 5, 12);
         const bldgUsed = estimate?.estimatedUsed ?? 0;
         const bldgCap = estimate?.capacity ?? building.storageCapacity;
 
         ctx.fillStyle = '#aaaaaa';
-        ctx.font = '12px monospace';
+        ctx.font = '11px monospace';
         ctx.fillText(`Capacity: ${Math.floor(bldgUsed)} / ${bldgCap}`, leftX, textY);
         textY += 16;
         const fillPct = bldgCap > 0 ? Math.min(100, (bldgUsed / bldgCap) * 100) : 100;
         const fillColor = fillPct >= 100 ? '#ff4444' : fillPct > 80 ? '#ddaa22' : '#44aa44';
-        this.drawBar(ctx, leftX, textY, w - 20, 'Fill', fillPct, fillColor);
+        this.drawBar(ctx, leftX, textY, contentW, 'Fill', fillPct, fillColor);
         textY += 18;
 
         ctx.fillStyle = '#cccccc';
@@ -703,22 +842,33 @@ export class InfoPanel {
       }
 
       if (building.maxWorkers > 0) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Workers');
+
         const assigned = building.assignedWorkers?.length || 0;
         ctx.fillStyle = '#aaaaaa';
-        ctx.font = '12px monospace';
+        ctx.font = '11px monospace';
         ctx.fillText(`Workers: ${assigned}/${building.maxWorkers}`, leftX, textY);
         textY += 16;
         // List assigned worker names as clickable links
         if (building.assignedWorkers) {
+          let shownWorkers = 0;
           for (const wId of building.assignedWorkers) {
             if (!world.entityExists(wId)) continue;
             const wCit = world.getComponent<any>(wId, 'citizen');
             if (!wCit) continue;
-            ctx.font = '12px monospace';
+            if (shownWorkers >= MAX_WORKERS_LISTED) continue;
+            ctx.font = '11px monospace';
             ctx.fillStyle = '#cccccc';
             ctx.fillText('  ', leftX, textY);
             this.drawLink(ctx, wCit.name, leftX + ctx.measureText('  ').width, textY, wId);
             textY += 15;
+            shownWorkers++;
+          }
+          if ((building.assignedWorkers?.length || 0) > shownWorkers) {
+            ctx.fillStyle = '#888888';
+            ctx.font = '10px monospace';
+            ctx.fillText(`+${(building.assignedWorkers?.length || 0) - shownWorkers} more`, leftX + 8, textY);
+            textY += 12;
           }
         }
 
@@ -766,44 +916,59 @@ export class InfoPanel {
       // House info
       const house = world.getComponent<any>(id, 'house');
       if (house) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Residents');
+
         ctx.fillStyle = '#aaaaaa';
-        ctx.font = '12px monospace';
+        ctx.font = '11px monospace';
         ctx.fillText(`Residents: ${house.residents.length}/${house.maxResidents}`, leftX, textY);
         textY += 16;
         // List resident names as clickable links
+        let shownResidents = 0;
         for (const rId of house.residents) {
           if (!world.entityExists(rId)) continue;
           const rCit = world.getComponent<any>(rId, 'citizen');
           if (!rCit) continue;
-          ctx.font = '12px monospace';
+          if (shownResidents >= MAX_RESIDENTS_LISTED) continue;
+          ctx.font = '11px monospace';
           ctx.fillStyle = '#cccccc';
           ctx.fillText('  ', leftX, textY);
           this.drawLink(ctx, rCit.name, leftX + ctx.measureText('  ').width, textY, rId);
           textY += 15;
+          shownResidents++;
+        }
+        if (house.residents.length > shownResidents) {
+          ctx.fillStyle = '#888888';
+          ctx.font = '10px monospace';
+          ctx.fillText(`+${house.residents.length - shownResidents} more`, leftX + 8, textY);
+          textY += 12;
         }
         ctx.fillText(`Firewood: ${Math.floor(house.firewood)}`, leftX, textY);
         textY += 16;
-        this.drawBar(ctx, leftX, textY, w - 20, 'Warmth', house.warmthLevel, '#ff8844');
+        this.drawBar(ctx, leftX, textY, contentW, 'Warmth', house.warmthLevel, '#ff8844');
         textY += 22;
       }
 
       // Producer info
+      let productionHeaderDrawn = false;
       const producer = world.getComponent<any>(id, 'producer');
       if (producer) {
+        textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Production');
+        productionHeaderDrawn = true;
+
         // Crop field: show growth stage
         if (building.type === 'crop_field' && producer.cropStage !== undefined) {
           const stageNames = ['Fallow', 'Planted', 'Sprouting', 'Growing', 'Flowering', 'Ready to Harvest'];
           const stageColors = ['#8a7d6b', '#6a6030', '#4a7733', '#55aa33', '#66bb44', '#ccaa33'];
           const stage = producer.cropStage as number;
           ctx.fillStyle = stageColors[stage] || '#aaaaaa';
-          ctx.font = 'bold 12px monospace';
+          ctx.font = 'bold 11px monospace';
           ctx.fillText(`Crops: ${stageNames[stage] || 'Unknown'}`, leftX, textY);
           textY += 16;
 
           // Growth progress bar within current stage
           if (stage > 0 && stage < 5) {
             const progress = ((producer.cropGrowthTimer || 0) / 120) * 100;
-            this.drawBar(ctx, leftX, textY, w - 20, 'Growth', Math.min(100, progress), stageColors[stage]);
+            this.drawBar(ctx, leftX, textY, contentW, 'Growth', Math.min(100, progress), stageColors[stage]);
             textY += 18;
           }
         } else {
@@ -817,6 +982,11 @@ export class InfoPanel {
       if (building.type === 'quarry' || building.type === 'mine') {
         const mineProducer = world.getComponent<any>(id, 'producer');
         if (mineProducer && building.completed) {
+          if (!productionHeaderDrawn) {
+            textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Production');
+            productionHeaderDrawn = true;
+          }
+
           const isQuarry = building.type === 'quarry';
           const remaining = isQuarry
             ? (mineProducer.undergroundStone ?? 0)
@@ -845,11 +1015,11 @@ export class InfoPanel {
           }
           ctx.fillStyle = statusColor;
           ctx.font = '10px monospace';
-          ctx.fillText(statusText, leftX, textY);
-          textY += 13;
+          textY = this.drawWrappedText(ctx, statusText, leftX, textY, contentW, 12);
+          textY += 1;
 
           // Vein bar
-          const barW = w - 20;
+          const barW = contentW;
           const barH = 6;
           ctx.fillStyle = '#333';
           ctx.fillRect(leftX, textY, barW, barH);
@@ -885,13 +1055,18 @@ export class InfoPanel {
       if (building.type === 'chicken_coop' || building.type === 'pasture') {
         const lsData = this.game.livestockSystem.getLivestockData(id);
         if (lsData) {
+          if (!productionHeaderDrawn) {
+            textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Production');
+            productionHeaderDrawn = true;
+          }
+
           const animalName = building.type === 'chicken_coop' ? 'Chickens' : 'Cattle';
           const cap = building.type === 'chicken_coop' ? 8 : 4;
           ctx.fillStyle = '#cccccc';
-          ctx.font = '12px monospace';
+          ctx.font = '11px monospace';
           ctx.fillText(`${animalName}: ${lsData.animalCount}/${cap}`, leftX, textY);
           textY += 16;
-          this.drawBar(ctx, leftX, textY, w - 20, 'Health', lsData.health, '#44aa44');
+          this.drawBar(ctx, leftX, textY, contentW, 'Health', lsData.health, '#44aa44');
           textY += 18;
         }
       }
@@ -904,30 +1079,59 @@ export class InfoPanel {
           if (cit.insideBuildingId === id) insideIds.push(cId);
         }
         if (insideIds.length > 0) {
-          textY += 4;
+          textY = this.drawSectionHeader(ctx, leftX, textY, contentW, 'Occupancy');
           ctx.fillStyle = '#cccccc';
-          ctx.font = 'bold 12px monospace';
+          ctx.font = 'bold 11px monospace';
           ctx.fillText(`Inside (${insideIds.length}):`, leftX, textY);
           textY += 16;
-          for (const cId of insideIds) {
+          const shownInside = insideIds.slice(0, MAX_INSIDE_LISTED);
+          for (const cId of shownInside) {
             const cit = allCitizens.get(cId);
             if (!cit) continue;
-            ctx.font = '12px monospace';
+            ctx.font = '11px monospace';
             const sleeping = cit.isSleeping;
             const prefix = sleeping ? '  zzz ' : '  ';
             ctx.fillStyle = sleeping ? '#8888cc' : '#cccccc';
             ctx.fillText(prefix, leftX, textY);
             const prefixW = ctx.measureText(prefix).width;
-            this.drawLink(ctx, cit.name, leftX + prefixW, textY, cId);
-            const nameW = ctx.measureText(cit.name).width;
+            const nameMaxW = Math.max(20, contentW - prefixW - 66);
+            const nameW = this.drawLink(ctx, cit.name, leftX + prefixW, textY, cId, nameMaxW);
             const activity = cit.activity || 'idle';
             ctx.fillStyle = '#888888';
-            ctx.font = '11px monospace';
+            ctx.font = '10px monospace';
             ctx.fillText(` ${this.activityLabel(activity)}`, leftX + prefixW + nameW, textY);
             textY += 15;
           }
+          if (insideIds.length > shownInside.length) {
+            ctx.fillStyle = '#888888';
+            ctx.font = '10px monospace';
+            ctx.fillText(`+${insideIds.length - shownInside.length} more`, leftX + 8, textY);
+            textY += 12;
+          }
         }
       }
+    }
+
+    const contentHeight = Math.max(0, textY - (startY - this.scrollOffset));
+    this.maxScroll = Math.max(0, contentHeight - contentH + 8);
+    this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.maxScroll));
+
+    ctx.restore();
+
+    const arrowX = x + panelW - PANEL_PADDING - 7;
+    if (this.maxScroll > 0 && this.scrollOffset > 0) {
+      const upY = y + PANEL_PADDING + 2;
+      this.scrollUpRect = { x: arrowX - 6, y: upY - 2, w: 14, h: 12 };
+      ctx.fillStyle = '#888';
+      ctx.font = '10px monospace';
+      ctx.fillText('\u25B2', arrowX, upY + 7);
+    }
+    if (this.maxScroll > 0 && this.scrollOffset < this.maxScroll) {
+      const downY = y + panelH - PANEL_PADDING - 2;
+      this.scrollDownRect = { x: arrowX - 6, y: downY - 9, w: 14, h: 12 };
+      ctx.fillStyle = '#888';
+      ctx.font = '10px monospace';
+      ctx.fillText('\u25BC', arrowX, downY);
     }
   }
 
@@ -1012,10 +1216,40 @@ export class InfoPanel {
     }
   }
 
+  private drawSectionHeader(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    label: string,
+  ): number {
+    const topGap = 6;
+    const bottomGap = 10;
+    const headerY = y + topGap;
+    ctx.fillStyle = '#8fa8bf';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(label, x, headerY);
+
+    const labelW = ctx.measureText(label).width;
+    const lineStart = x + labelW + 6;
+    const lineY = headerY + 3;
+    if (lineStart < x + width) {
+      ctx.strokeStyle = `rgba(143,168,191,${SECTION_RULE_ALPHA})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(lineStart, lineY);
+      ctx.lineTo(x + width, lineY);
+      ctx.stroke();
+    }
+
+    return lineY + bottomGap;
+  }
+
   private drawBar(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, label: string, value: number, color: string): void {
-    const barWidth = width - 60;
+    const barWidth = Math.max(20, width - 58);
     const barHeight = 12;
     const barX = x + 55;
+    const clamped = Math.max(0, Math.min(100, value));
 
     ctx.fillStyle = '#aaaaaa';
     ctx.font = '10px monospace';
@@ -1027,11 +1261,13 @@ export class InfoPanel {
 
     // Fill
     ctx.fillStyle = color;
-    ctx.fillRect(barX, y, barWidth * (value / 100), barHeight);
+    ctx.fillRect(barX, y, barWidth * (clamped / 100), barHeight);
 
     // Value text
+    const valueLabel = `${Math.floor(clamped)}`;
+    const valueW = ctx.measureText(valueLabel).width;
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`${Math.floor(value)}`, barX + barWidth + 4, y + 10);
+    ctx.fillText(valueLabel, barX + Math.max(2, barWidth - valueW - 2), y + 10);
   }
 
   private drawWrappedText(
@@ -1065,5 +1301,20 @@ export class InfoPanel {
     }
 
     return y;
+  }
+
+  private truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+    if (maxWidth <= 0) return '';
+    if (ctx.measureText(text).width <= maxWidth) return text;
+
+    const ellipsis = '...';
+    const ellipsisW = ctx.measureText(ellipsis).width;
+    if (ellipsisW > maxWidth) return '';
+
+    let out = text;
+    while (out.length > 0 && ctx.measureText(out + ellipsis).width > maxWidth) {
+      out = out.slice(0, -1);
+    }
+    return out + ellipsis;
   }
 }

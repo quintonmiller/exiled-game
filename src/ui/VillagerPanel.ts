@@ -2,8 +2,7 @@ import type { Game } from '../Game';
 import { HUD_HEIGHT } from '../constants';
 import { Settings } from '../Settings';
 
-const PANEL_X = 320;
-const PANEL_Y = HUD_HEIGHT + 10;
+const PANEL_MARGIN = 10;
 const PANEL_W = 360;
 const PANEL_PADDING = 6;
 const HEADER_H = 24;
@@ -106,31 +105,36 @@ export class VillagerPanel {
     }
 
     const maxScroll = Math.max(0, this.buildRows().length - VISIBLE_ROWS);
-    this.scrollOffset = Math.max(0, Math.min(maxScroll, this.scrollOffset - delta));
+    const direction = Math.sign(delta);
+    this.scrollOffset = Math.max(0, Math.min(maxScroll, this.scrollOffset - direction));
     return true;
   }
 
-  draw(ctx: CanvasRenderingContext2D, _canvasWidth: number, _canvasHeight: number): void {
+  draw(ctx: CanvasRenderingContext2D, canvasWidth: number, _canvasHeight: number): void {
     if (!this.visible) return;
 
     this.linkRects = [];
 
     const rows = this.buildRows();
+    const panelW = Math.min(PANEL_W, Math.max(240, Math.floor(canvasWidth * 0.42)));
+    const preferredX = 320;
+    const panelX = Math.min(Math.max(PANEL_MARGIN, preferredX), canvasWidth - panelW - PANEL_MARGIN);
+    const panelY = HUD_HEIGHT + PANEL_MARGIN;
     const panelH = HEADER_H + VISIBLE_ROWS * ROW_H + PANEL_PADDING * 2;
-    this.panelRect = { x: PANEL_X, y: PANEL_Y, w: PANEL_W, h: panelH };
+    this.panelRect = { x: panelX, y: panelY, w: panelW, h: panelH };
 
     ctx.fillStyle = 'rgba(15, 18, 24, 0.92)';
-    ctx.fillRect(PANEL_X, PANEL_Y, PANEL_W, panelH);
+    ctx.fillRect(panelX, panelY, panelW, panelH);
     ctx.strokeStyle = '#555';
     ctx.lineWidth = 1;
-    ctx.strokeRect(PANEL_X, PANEL_Y, PANEL_W, panelH);
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px monospace';
-    ctx.fillText(`Villagers (${rows.length})`, PANEL_X + PANEL_PADDING, PANEL_Y + 16);
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(`Villagers (${rows.length})`, panelX + PANEL_PADDING, panelY + 16);
 
-    const closeX = PANEL_X + PANEL_W - 22;
-    const closeY = PANEL_Y + 4;
+    const closeX = panelX + panelW - 22;
+    const closeY = panelY + 4;
     this.closeBtnRect = { x: closeX, y: closeY, w: 18, h: 16 };
     ctx.fillStyle = 'rgba(80, 30, 30, 0.6)';
     ctx.fillRect(closeX, closeY, 18, 16);
@@ -140,11 +144,11 @@ export class VillagerPanel {
     ctx.font = 'bold 11px monospace';
     ctx.fillText('X', closeX + 4, closeY + 12);
 
-    const dividerY = PANEL_Y + HEADER_H;
+    const dividerY = panelY + HEADER_H;
     ctx.strokeStyle = '#444';
     ctx.beginPath();
-    ctx.moveTo(PANEL_X, dividerY);
-    ctx.lineTo(PANEL_X + PANEL_W, dividerY);
+    ctx.moveTo(panelX, dividerY);
+    ctx.lineTo(panelX + panelW, dividerY);
     ctx.stroke();
 
     const maxScroll = Math.max(0, rows.length - VISIBLE_ROWS);
@@ -160,11 +164,12 @@ export class VillagerPanel {
 
       if (i % 2 === 0) {
         ctx.fillStyle = 'rgba(255,255,255,0.03)';
-        ctx.fillRect(PANEL_X + 2, rowY - 2, PANEL_W - 4, ROW_H);
+        ctx.fillRect(panelX + 2, rowY - 2, panelW - 4, ROW_H);
       }
 
       const textY = rowY + 12;
-      let cursorX = PANEL_X + PANEL_PADDING;
+      let cursorX = panelX + PANEL_PADDING;
+      const rowRight = panelX + panelW - PANEL_PADDING - 14;
 
       // Gender circle
       const circleR = 4;
@@ -176,43 +181,56 @@ export class VillagerPanel {
       ctx.fill();
       cursorX += circleR * 2 + 5;
 
-      cursorX += this.drawLink(ctx, row.name, cursorX, textY, row.id);
-
-      // Age label
-      ctx.fillStyle = '#888';
-      ctx.font = '11px monospace';
       const ageLabel = ` (${row.age})`;
-      ctx.fillText(ageLabel, cursorX, textY);
-      cursorX += ctx.measureText(ageLabel).width;
+      const ageW = ctx.measureText(ageLabel).width;
+      const minPartnerW = row.partnerId !== null && row.partnerName ? 52 : 0;
+      const nameMaxW = Math.max(30, rowRight - cursorX - ageW - minPartnerW);
+      cursorX += this.drawLink(ctx, row.name, cursorX, textY, row.id, nameMaxW);
+
+      if (cursorX + ageW <= rowRight) {
+        ctx.fillStyle = '#888';
+        ctx.font = '11px monospace';
+        ctx.fillText(ageLabel, cursorX, textY);
+        cursorX += ageW;
+      }
 
       if (row.partnerId !== null && row.partnerName) {
         ctx.fillStyle = '#888';
         ctx.font = '11px monospace';
-        const separator = '  <->  ';
-        ctx.fillText(separator, cursorX, textY);
-        cursorX += ctx.measureText(separator).width;
+        const separator = '  ·  ';
+        const sepW = ctx.measureText(separator).width;
+        const partnerAgeLabel = ` (${row.partnerAge})`;
+        const partnerAgeW = ctx.measureText(partnerAgeLabel).width;
+        const partnerPrefixW = sepW + circleR * 2 + 5;
+        if (cursorX + partnerPrefixW + 18 <= rowRight) {
+          ctx.fillText(separator, cursorX, textY);
+          cursorX += sepW;
 
-        // Partner gender circle
-        ctx.beginPath();
-        ctx.arc(cursorX + circleR, circleY, circleR, 0, Math.PI * 2);
-        ctx.fillStyle = row.partnerIsMale ? '#5599ff' : '#ff77aa';
-        ctx.fill();
-        cursorX += circleR * 2 + 5;
+          // Partner gender circle
+          ctx.beginPath();
+          ctx.arc(cursorX + circleR, circleY, circleR, 0, Math.PI * 2);
+          ctx.fillStyle = row.partnerIsMale ? '#5599ff' : '#ff77aa';
+          ctx.fill();
+          cursorX += circleR * 2 + 5;
 
-        cursorX += this.drawLink(ctx, row.partnerName, cursorX, textY, row.partnerId);
+          const partnerMaxW = Math.max(18, rowRight - cursorX - partnerAgeW);
+          cursorX += this.drawLink(ctx, row.partnerName, cursorX, textY, row.partnerId, partnerMaxW);
 
-        // Partner age label
-        ctx.fillStyle = '#888';
-        ctx.font = '11px monospace';
-        ctx.fillText(` (${row.partnerAge})`, cursorX, textY);
+          if (cursorX + partnerAgeW <= rowRight) {
+            ctx.fillStyle = '#888';
+            ctx.font = '11px monospace';
+            ctx.fillText(partnerAgeLabel, cursorX, textY);
+          }
+        }
       } else if (!row.isChild) {
         ctx.fillStyle = '#666';
         ctx.font = '11px monospace';
-        ctx.fillText('  (no partner)', cursorX, textY);
+        const singleLabel = this.truncateText(ctx, '  single', Math.max(0, rowRight - cursorX));
+        ctx.fillText(singleLabel, cursorX, textY);
       }
     }
 
-    const arrowX = PANEL_X + PANEL_W - 16;
+    const arrowX = panelX + panelW - 16;
     this.scrollUpRect = { x: 0, y: 0, w: 0, h: 0 };
     this.scrollDownRect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -235,7 +253,7 @@ export class VillagerPanel {
     if (rows.length === 0) {
       ctx.fillStyle = '#666';
       ctx.font = '11px monospace';
-      ctx.fillText('No villagers found.', PANEL_X + PANEL_PADDING, rowsY + 20);
+      ctx.fillText('No villagers found.', panelX + PANEL_PADDING, rowsY + 20);
     }
   }
 
@@ -278,11 +296,21 @@ export class VillagerPanel {
     return rows;
   }
 
-  private drawLink(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, entityId: number): number {
-    const width = ctx.measureText(text).width;
-    ctx.fillStyle = '#66ccff';
+  private drawLink(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    x: number,
+    y: number,
+    entityId: number,
+    maxWidth = Number.POSITIVE_INFINITY,
+  ): number {
     ctx.font = '11px monospace';
-    ctx.fillText(text, x, y);
+    const label = this.truncateText(ctx, text, maxWidth);
+    if (label.length === 0) return 0;
+
+    const width = ctx.measureText(label).width;
+    ctx.fillStyle = '#66ccff';
+    ctx.fillText(label, x, y);
 
     ctx.strokeStyle = '#66ccff';
     ctx.lineWidth = 1;
@@ -293,6 +321,21 @@ export class VillagerPanel {
 
     this.linkRects.push({ x, y: y - 11, w: width, h: 14, entityId });
     return width;
+  }
+
+  private truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+    if (maxWidth <= 0) return '';
+    if (ctx.measureText(text).width <= maxWidth) return text;
+
+    const ellipsis = '...';
+    const ellipsisW = ctx.measureText(ellipsis).width;
+    if (ellipsisW > maxWidth) return '';
+
+    let out = text;
+    while (out.length > 0 && ctx.measureText(out + ellipsis).width > maxWidth) {
+      out = out.slice(0, -1);
+    }
+    return out + ellipsis;
   }
 
   private selectAndFocus(entityId: number): void {

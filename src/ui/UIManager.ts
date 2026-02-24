@@ -74,6 +74,9 @@ export class UIManager {
     // Villager panel
     if (this.villagerPanel.visible && this.villagerPanel.isPointOver(screenX, screenY)) return true;
 
+    // Info panel
+    if (this.game.state.selectedEntity !== null && this.infoPanel.isPointOver(screenX, screenY)) return true;
+
     return false;
   }
 
@@ -161,6 +164,7 @@ export class UIManager {
 
   handleScroll(delta: number, mouseX: number, mouseY: number): boolean {
     if (this.eventLog.handleScroll(delta, mouseX, mouseY)) return true;
+    if (this.game.state.selectedEntity !== null && this.infoPanel.handleScroll(delta, mouseX, mouseY)) return true;
     return this.villagerPanel.handleScroll(delta, mouseX, mouseY);
   }
 
