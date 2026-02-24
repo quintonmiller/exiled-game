@@ -383,7 +383,8 @@ export class UIManager {
 
   private drawSpeedControls(ctx: CanvasRenderingContext2D, canvasWidth: number): void {
     const speeds = [1, 2, 5, 10];
-    const x = canvasWidth - 180;
+    const rightPadding = 12;
+    const x = canvasWidth - 180 - rightPadding;
     const y = 8;
 
     ctx.font = '12px monospace';

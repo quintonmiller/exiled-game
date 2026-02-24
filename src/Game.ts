@@ -449,10 +449,10 @@ export class Game {
 
     this.renderSystem.render(interp, this.state, { citizens, travelers, buildings, ghosts, drawParticles, selectedPath });
 
-    // Draw UI on top
+    // Draw HUD first, then interactive overlays (speed controls, panels) on top.
     const ctx = this.canvas.getContext('2d')!;
-    this.uiManager.draw(ctx);
     this.renderSystem.drawHUD(this.state, resourceMap, this.weatherSystem.currentWeather, this.getStorageUsed(), this.getStorageCapacity());
+    this.uiManager.draw(ctx);
 
     // Post-render hook (pause menu overlay)
     if (this.postRenderHook) {
