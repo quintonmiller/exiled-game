@@ -53,15 +53,15 @@ export class PauseMenu {
     const panelX = (w - panelW) / 2;
     const panelY = (h - panelH) / 2;
 
-    ctx.fillStyle = '#1a1a2e';
-    ctx.strokeStyle = '#445577';
+    ctx.fillStyle = '#161210';
+    ctx.strokeStyle = '#2a221a';
     ctx.lineWidth = 2;
     this.roundRect(ctx, panelX, panelY, panelW, panelH, 12);
     ctx.fill();
     ctx.stroke();
 
     // Title
-    ctx.fillStyle = '#c8a96e';
+    ctx.fillStyle = '#cc8e28';
     ctx.font = 'bold 28px Georgia, "Times New Roman", serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -95,15 +95,15 @@ export class PauseMenu {
   }
 
   private drawButton(ctx: CanvasRenderingContext2D, btn: MenuButton, hovered: boolean): void {
-    ctx.fillStyle = hovered ? '#2a3a5a' : '#1e2a44';
-    ctx.strokeStyle = hovered ? '#88aaff' : '#445577';
+    ctx.fillStyle = hovered ? '#252019' : '#1d1813';
+    ctx.strokeStyle = hovered ? '#cc8e28' : '#2a221a';
     ctx.lineWidth = 2;
 
     this.roundRect(ctx, btn.x, btn.y, btn.w, btn.h, 6);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = '#eee6d2';
     ctx.font = 'bold 16px Georgia, "Times New Roman", serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

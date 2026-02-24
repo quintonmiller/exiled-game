@@ -15,7 +15,7 @@ export class StartScreen {
   private ctx: CanvasRenderingContext2D;
   private saveManager: SaveManager;
   private seedInput: HTMLInputElement | null = null;
-  private footer: HTMLElement;
+  private footer: HTMLElement | null;
   private showingSeedInput = false;
   private buttons: Button[] = [];
   private hoveredButton: number = -1;
@@ -31,28 +31,7 @@ export class StartScreen {
     this.saveManager = saveManager;
     this.ctx = canvas.getContext('2d')!;
 
-    // Footer
-    this.footer = document.createElement('div');
-    this.footer.style.cssText = `
-      position: absolute;
-      bottom: 16px;
-      left: 0;
-      right: 0;
-      text-align: center;
-      z-index: 10;
-      font: 13px Georgia, "Times New Roman", serif;
-      color: #555;
-    `;
-    const link = document.createElement('a');
-    link.href = 'https://quinton.dev';
-    link.target = '_blank';
-    link.rel = 'noopener';
-    link.textContent = 'Made by Quinton Miller';
-    link.style.cssText = 'color: #667; text-decoration: none;';
-    link.addEventListener('mouseenter', () => { link.style.color = '#99b'; });
-    link.addEventListener('mouseleave', () => { link.style.color = '#667'; });
-    this.footer.appendChild(link);
-    document.body.appendChild(this.footer);
+    this.footer = document.getElementById('footer');
 
     // Mouse events
     this.canvas.addEventListener('mousemove', this.onMouseMove);
@@ -61,6 +40,7 @@ export class StartScreen {
 
   start(): void {
     this.running = true;
+    if (this.footer) this.footer.style.display = 'block';
     this.resizeCanvas();
     this.loop();
   }
@@ -71,7 +51,7 @@ export class StartScreen {
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     this.canvas.removeEventListener('click', this.onClick);
     this.hideSeedInput();
-    this.footer.remove();
+    if (this.footer) this.footer.style.display = 'none';
   }
 
   private showSeedInput(): void {
@@ -90,9 +70,9 @@ export class StartScreen {
       padding: 10px 14px;
       font-size: 15px;
       font-family: 'Courier New', Courier, monospace;
-      background: #1a1a2e;
-      color: #e0e0e0;
-      border: 2px solid #444;
+      background: #161210;
+      color: #eee6d2;
+      border: 2px solid #2a221a;
       border-radius: 6px;
       outline: none;
       text-align: center;
@@ -143,21 +123,21 @@ export class StartScreen {
     this.ctx.scale(dpr, dpr);
 
     // Solid dark background
-    this.ctx.fillStyle = '#0d0d1a';
+    this.ctx.fillStyle = '#0d0a07';
     this.ctx.fillRect(0, 0, w, h);
 
     const cx = w / 2;
     let cy = h * 0.22;
 
     // Title
-    this.ctx.fillStyle = '#c8a96e';
+    this.ctx.fillStyle = '#cc8e28';
     this.ctx.font = 'bold 52px Georgia, "Times New Roman", serif';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
     this.ctx.fillText('Exiled', cx, cy);
 
     cy += 44;
-    this.ctx.fillStyle = '#6a6a7a';
+    this.ctx.fillStyle = '#96866a';
     this.ctx.font = 'italic 17px Georgia, "Times New Roman", serif';
     this.ctx.fillText('A Settlement Survival Game', cx, cy);
 
@@ -239,13 +219,13 @@ export class StartScreen {
 
     // Background
     if (!btn.enabled) {
-      ctx.fillStyle = '#1a1a2e';
+      ctx.fillStyle = '#161210';
     } else if (hovered) {
-      ctx.fillStyle = '#2a3a5a';
+      ctx.fillStyle = '#252019';
     } else {
-      ctx.fillStyle = '#1e2a44';
+      ctx.fillStyle = '#1d1813';
     }
-    ctx.strokeStyle = btn.enabled ? (hovered ? '#88aaff' : '#445577') : '#2a2a3e';
+    ctx.strokeStyle = btn.enabled ? (hovered ? '#cc8e28' : '#2a221a') : '#201a14';
     ctx.lineWidth = 2;
 
     this.roundRect(ctx, btn.x, btn.y, btn.w, btn.h, 8);
@@ -253,7 +233,7 @@ export class StartScreen {
     ctx.stroke();
 
     // Label
-    ctx.fillStyle = btn.enabled ? '#e0e0e0' : '#555';
+    ctx.fillStyle = btn.enabled ? '#eee6d2' : '#504030';
     ctx.font = 'bold 17px Georgia, "Times New Roman", serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -262,7 +242,7 @@ export class StartScreen {
 
     // Sub text
     if (btn.subText) {
-      ctx.fillStyle = btn.enabled ? '#8a9ab0' : '#444';
+      ctx.fillStyle = btn.enabled ? '#96866a' : '#504030';
       ctx.font = '12px "Courier New", Courier, monospace';
       ctx.fillText(btn.subText, btn.x + btn.w / 2, btn.y + btn.h / 2 + 12);
     }

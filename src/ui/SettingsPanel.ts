@@ -82,15 +82,15 @@ export class SettingsPanel {
     const panelX = (w - panelW) / 2;
     const panelY = (h - panelH) / 2;
 
-    ctx.fillStyle = '#1a1a2e';
-    ctx.strokeStyle = '#445577';
+    ctx.fillStyle = '#161210';
+    ctx.strokeStyle = '#2a221a';
     ctx.lineWidth = 2;
     this.roundRect(ctx, panelX, panelY, panelW, panelH, 12);
     ctx.fill();
     ctx.stroke();
 
     // Title
-    ctx.fillStyle = '#c8a96e';
+    ctx.fillStyle = '#cc8e28';
     ctx.font = `bold 28px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -172,14 +172,14 @@ export class SettingsPanel {
     const btnY = panelY + panelH - btnH - 24;
     this.backBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
 
-    ctx.fillStyle = this.hoveredBack ? '#2a3a5a' : '#1e2a44';
-    ctx.strokeStyle = this.hoveredBack ? '#88aaff' : '#445577';
+    ctx.fillStyle = this.hoveredBack ? '#252019' : '#1d1813';
+    ctx.strokeStyle = this.hoveredBack ? '#cc8e28' : '#2a221a';
     ctx.lineWidth = 2;
     this.roundRect(ctx, btnX, btnY, btnW, btnH, 6);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#e0e0e0';
+    ctx.fillStyle = '#eee6d2';
     ctx.font = `bold 16px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -193,26 +193,26 @@ export class SettingsPanel {
     const t = (value - slider.min) / (slider.max - slider.min);
 
     // Label
-    ctx.fillStyle = '#b0b0c0';
+    ctx.fillStyle = '#96866a';
     ctx.font = `14px ${FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(slider.label, slider.x, slider.y);
 
     // Value text
-    ctx.fillStyle = '#c8a96e';
+    ctx.fillStyle = '#cc8e28';
     ctx.font = `bold 14px ${FONT}`;
     ctx.textAlign = 'right';
     ctx.fillText(slider.format(value), slider.x + slider.w, slider.y);
 
     // Track
     const trackY = slider.y + 24;
-    ctx.fillStyle = '#2a2a44';
+    ctx.fillStyle = '#201a14';
     this.roundRect(ctx, slider.x, trackY - TRACK_H / 2, slider.w, TRACK_H, 3);
     ctx.fill();
 
     // Filled portion
-    ctx.fillStyle = '#445588';
+    ctx.fillStyle = '#4a3820';
     this.roundRect(ctx, slider.x, trackY - TRACK_H / 2, slider.w * t, TRACK_H, 3);
     ctx.fill();
 
@@ -220,9 +220,9 @@ export class SettingsPanel {
     const thumbX = slider.x + slider.w * t;
     ctx.beginPath();
     ctx.arc(thumbX, trackY, THUMB_R, 0, Math.PI * 2);
-    ctx.fillStyle = '#88aaff';
+    ctx.fillStyle = '#cc8e28';
     ctx.fill();
-    ctx.strokeStyle = '#aaccff';
+    ctx.strokeStyle = '#dfa83e';
     ctx.lineWidth = 2;
     ctx.stroke();
   }
@@ -231,7 +231,7 @@ export class SettingsPanel {
     const enabled = Settings.get(toggle.key) as boolean;
 
     // Label
-    ctx.fillStyle = '#b0b0c0';
+    ctx.fillStyle = '#96866a';
     ctx.font = `14px ${FONT}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -239,8 +239,8 @@ export class SettingsPanel {
 
     // Checkbox
     const { boxX, boxY, boxSize } = toggle;
-    ctx.fillStyle = enabled ? '#445588' : '#2a2a44';
-    ctx.strokeStyle = enabled ? '#88aaff' : '#555';
+    ctx.fillStyle = enabled ? '#4a3820' : '#201a14';
+    ctx.strokeStyle = enabled ? '#cc8e28' : '#504030';
     ctx.lineWidth = 2;
     this.roundRect(ctx, boxX, boxY, boxSize, boxSize, 3);
     ctx.fill();
@@ -248,7 +248,7 @@ export class SettingsPanel {
 
     // Checkmark
     if (enabled) {
-      ctx.strokeStyle = '#88ffaa';
+      ctx.strokeStyle = '#6aab78';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(boxX + 4, boxY + boxSize / 2);
